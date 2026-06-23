@@ -193,7 +193,7 @@ class ModbusServer:
             ]
         }
         from pymodbus.datastore.simulator import ModbusSimulatorContext
-        context = ModbusSimulatorContext(config)
+        context = ModbusSimulatorContext(config, custom_actions={})
         if self.debug_logging:
             _LOGGER.debug("Created ModbusSimulatorContext with 4 registers")
 
