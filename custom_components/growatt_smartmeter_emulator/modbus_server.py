@@ -225,11 +225,13 @@ class ModbusServer:
             _LOGGER.error("Failed to start Modbus server: %s", e, exc_info=self.debug_logging)
             raise
 
-    def stop(self) -> None:
-        """Stop the Modbus server."""
+    async def stop(self) -> None:
+        """Stop the Modbus server asynchronously."""
+        if self.debug_logging:
+            _LOGGER.debug("Stopping Modbus server")
         self.running = False
         if self.server:
-            asyncio.run_coroutine_threadsafe(
-                self.server.stop(), self.loop
-            )
+            await self.server.stop()
+            if self.debug_logging:
+                _LOGGER.debug("Modbus server stopped successfully")
             _LOGGER.info("Growatt Modbus server stopped")
