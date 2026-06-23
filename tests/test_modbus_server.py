@@ -225,5 +225,31 @@ def test_modbus_server_frequency_custom():
         assert server.register_map[40004].value == 6000
 
 
+def test_modbus_server_frequency_dropdown_only():
+    """Test that the frequency register cannot be overwritten by a sensor."""
+    with patch("custom_components.growatt_smartmeter_emulator.modbus_server._LOGGER"):
+        hass = MagicMock()
+        entry = MagicMock()
+        entry.data = {
+            "host": "0.0.0.0",
+            "port": 502,
+            "slave": 1,
+            "power_sensor": "sensor.test_power",
+            "frequency": 50,  # Default
+        }
+        entry.entry_id = "test_entry"
+
+        server = ModbusServer(hass, entry)
+        server.setup_registers()
+
+        # Check if default frequency (50 Hz) is used (50 * 100 = 5000)
+        assert server.register_map[40004].value == 5000
+        assert server.register_map[40004].sensor_entity_id is None
+
+        # Simulate updating the register (should not change the value)
+        server.update_register_from_sensor(40004)
+        assert server.register_map[40004].value == 5000  # Still 50 Hz
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

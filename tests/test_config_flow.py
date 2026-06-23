@@ -126,6 +126,30 @@ def test_validate_input_frequency_custom():
     asyncio.run(run_test())
 
 
+def test_validate_input_entity_selector():
+    """Test validation with entity selectors for power, voltage, and current sensors."""
+    data = {
+        "host": "0.0.0.0",
+        "port": 502,
+        "slave": 1,
+        "power_sensor": "sensor.test_power",
+        "voltage_sensor": "sensor.test_voltage",
+        "current_sensor": "sensor.test_current",
+    }
+
+    import asyncio
+
+    async def run_test():
+        result = await validate_input(MagicMock(), data)
+        assert result["title"] == "Growatt Meter Emulator"
+        # Check if entity IDs are preserved
+        assert data["power_sensor"] == "sensor.test_power"
+        assert data["voltage_sensor"] == "sensor.test_voltage"
+        assert data["current_sensor"] == "sensor.test_current"
+
+    asyncio.run(run_test())
+
+
 def test_validate_input_invalid_host():
     """Test validation with empty host."""
     data = {

@@ -89,8 +89,8 @@ class ModbusServer:
             ),
             40004: RegisterMapping(
                 address=40004,
-                value=int(self.config_entry.data.get("frequency", 50)) * 100,  # Default: 50 Hz (50 * 100 = 5000)
-                sensor_entity_id=self.config_entry.data.get("frequency_sensor"),
+                value=int(self.config_entry.data.get("frequency", 50)) * 100,
+                sensor_entity_id=None,
                 scale=100,
                 signed=False,
                 description="Frequency",
@@ -156,7 +156,8 @@ class ModbusServer:
         self.setup_registers()
 
         store = ModbusSequentialDataBlock(0, [0] * 100)
-        context = ModbusDeviceContext(unit=store)
+        context = ModbusDeviceContext()
+        context[self.slave_id] = store
 
         identity = ModbusDeviceIdentification()
         identity.VendorName = "SmartMeter Emulator"

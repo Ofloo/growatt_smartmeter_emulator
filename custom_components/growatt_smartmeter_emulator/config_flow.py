@@ -10,7 +10,13 @@ from homeassistant.const import (
     CONF_PORT,
     CONF_SLAVE,
 )
-from homeassistant.helpers.selector import SelectSelector, SelectSelectorConfig, SelectSelectorMode
+from homeassistant.helpers.selector import (
+    EntitySelector,
+    EntitySelectorConfig,
+    SelectSelector,
+    SelectSelectorConfig,
+    SelectSelectorMode,
+)
 
 from .const import DOMAIN
 
@@ -19,10 +25,15 @@ STEP_DATA_SCHEMA = vol.Schema(
         vol.Required(CONF_HOST, default="0.0.0.0"): str,
         vol.Required(CONF_PORT, default=502): int,
         vol.Required(CONF_SLAVE, default=1): int,
-        vol.Required("power_sensor"): str,
-        vol.Optional("voltage_sensor"): str,
-        vol.Optional("current_sensor"): str,
-        vol.Optional("frequency_sensor"): str,
+        vol.Required("power_sensor"): EntitySelector(
+            EntitySelectorConfig(domain="sensor", device_class="power")
+        ),
+        vol.Optional("voltage_sensor"): EntitySelector(
+            EntitySelectorConfig(domain="sensor", device_class="voltage")
+        ),
+        vol.Optional("current_sensor"): EntitySelector(
+            EntitySelectorConfig(domain="sensor", device_class="current")
+        ),
         vol.Optional("frequency", default=50): SelectSelector(
             SelectSelectorConfig(
                 options=["50", "60"],
