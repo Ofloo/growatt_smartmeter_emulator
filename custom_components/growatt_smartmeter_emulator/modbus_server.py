@@ -21,8 +21,9 @@ _LOGGER = logging.getLogger(__name__)
 
 try:
     from pymodbus.server import StartAsyncTcpServer
-    from pymodbus.datastore import ModbusServerContext, ModbusSequentialDataBlock, ModbusDeviceContext
+    from pymodbus.datastore import ModbusSequentialDataBlock
     from pymodbus import ModbusDeviceIdentification
+    from pymodbus.datastore.simulator import ModbusSimulatorContext
 except ImportError as err:
     _LOGGER.error("Failed to import pymodbus: %s", err)
     raise
@@ -55,7 +56,7 @@ class ModbusServer:
         self.host = config_entry.data.get(CONF_HOST, "0.0.0.0")
         self.port = config_entry.data.get(CONF_PORT, 502)
         self.slave_id = config_entry.data.get(CONF_SLAVE, 1)
-        self.debug_logging = config_entry.data.get("debug_logging", False)  # Lees debug_logging
+        self.debug_logging = True  # Forceer debug-logging tijdens ontwikkeling
 
         # Configureer logging
         if self.debug_logging:
@@ -165,8 +166,8 @@ class ModbusServer:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             return s.connect_ex(("0.0.0.0", port)) == 0
 
-    def start(self) -> None:
-        """Start the Modbus server."""
+    async def start(self) -> None:
+        """Start the Modbus server asynchronously."""
         if self.debug_logging:
             _LOGGER.debug("Starting Modbus server setup")
         self.setup_registers()
@@ -179,15 +180,22 @@ class ModbusServer:
             _LOGGER.error("Port %s is already in use", self.port)
             raise RuntimeError(f"Port {self.port} is already in use")
 
-        store = ModbusSequentialDataBlock(1, [0] * 100)
         if self.debug_logging:
             _LOGGER.debug("Created ModbusSequentialDataBlock")
 
-        # Maak een ModbusServerContext met een lege ModbusDeviceContext (pymodbus v3.6.0+)
-        dummy_device = ModbusDeviceContext()
-        context = ModbusServerContext(devices={0: dummy_device})
+        # Maak een ModbusSimulatorContext met 4 registers (40001-40004)
+        config = {
+            "setup": {
+                "hr size": 4,  # 4 holding registers
+            },
+            "uint16": [
+                [40001, 40004]  # 4 registers vanaf 40001
+            ]
+        }
+        from pymodbus.datastore.simulator import ModbusSimulatorContext
+        context = ModbusSimulatorContext(config)
         if self.debug_logging:
-            _LOGGER.debug("Created ModbusServerContext with dummy device")
+            _LOGGER.debug("Created ModbusSimulatorContext with 4 registers")
 
         identity = ModbusDeviceIdentification()
         identity.VendorName = "SmartMeter Emulator"
@@ -202,7 +210,7 @@ class ModbusServer:
         if self.debug_logging:
             _LOGGER.debug("Starting Modbus server on %s:%s", self.host, self.port)
         try:
-            self.server = StartAsyncTcpServer(
+            self.server = await StartAsyncTcpServer(
                 context=context,
                 identity=identity,
                 address=(self.host, self.port),

@@ -24,11 +24,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.data[DOMAIN][entry.entry_id] = coordinator
 
     modbus_server = ModbusServer(hass, entry)
-    modbus_server.start()
+    await modbus_server.start()
     hass.data[DOMAIN]["modbus_server"] = modbus_server
 
     entry.async_on_unload(entry.add_update_listener(async_update_entry))
-    entry.async_on_unload(lambda: modbus_server.stop())
+    entry.async_on_unload(lambda: hass.async_create_task(modbus_server.stop()))
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
