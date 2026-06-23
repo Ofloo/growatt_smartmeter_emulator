@@ -2,6 +2,8 @@ custom_components/growatt_smartmeter_emulator/
 __pycache__/
 *.pyc
 __pycache__/*
+*/__pycache__/
+*/__pycache__/*
 
 # Testing
 .pytest_cache/
