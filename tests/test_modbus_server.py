@@ -292,7 +292,7 @@ def test_modbus_server_start():
         server.start()
 
         # Controleer of ModbusSequentialDataBlock correct wordt aangemaakt
-        mock_block.assert_called_once_with(0, [0] * 100)
+        mock_block.assert_called_once_with(1, [0] * 100)
 
         # Controleer of ModbusServerContext correct wordt geïnitialiseerd
         mock_server_context.assert_called_once()  # Geen argumenten verwacht in constructor

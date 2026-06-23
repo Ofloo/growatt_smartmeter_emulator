@@ -179,7 +179,7 @@ class ModbusServer:
             _LOGGER.error("Port %s is already in use", self.port)
             raise RuntimeError(f"Port {self.port} is already in use")
 
-        store = ModbusSequentialDataBlock(0, [0] * 100)
+        store = ModbusSequentialDataBlock(1, [0] * 100)
         if self.debug_logging:
             _LOGGER.debug("Created ModbusSequentialDataBlock")
 
