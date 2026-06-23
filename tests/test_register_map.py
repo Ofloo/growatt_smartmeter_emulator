@@ -1,5 +1,5 @@
 """Tests for SmartMeter Emulator register map."""
-from custom_components.growatt_meter_emulator.register_map import (
+from custom_components.growatt_smartmeter_emulator.register_map import (
     RegisterMap,
     RegisterDefinition,
 )

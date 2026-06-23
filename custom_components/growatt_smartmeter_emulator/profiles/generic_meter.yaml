@@ -1,0 +1,45 @@
+name: Generic Meter
+description: Generic Modbus meter profile
+registers:
+  40001:
+    name: "Active Power"
+    value_type: "int16"
+    scale: 1.0
+    signed: true
+    unit: "W"
+    description: "Active power in watts"
+  40002:
+    name: "AC Voltage"
+    value_type: "uint16"
+    scale: 10.0
+    signed: false
+    unit: "V"
+    description: "AC voltage divided by 10"
+  40003:
+    name: "Current"
+    value_type: "uint16"
+    scale: 10.0
+    signed: false
+    unit: "A"
+    description: "Current divided by 10"
+  40004:
+    name: "Frequency"
+    value_type: "uint16"
+    scale: 100.0
+    signed: false
+    unit: "Hz"
+    description: "Frequency divided by 100"
+  40005:
+    name: "Import Energy"
+    value_type: "uint32"
+    scale: 1.0
+    signed: false
+    unit: "kWh"
+    description: "Import energy in kWh"
+  40007:
+    name: "Export Energy"
+    value_type: "uint32"
+    scale: 1.0
+    signed: false
+    unit: "kWh"
+    description: "Export energy in kWh"

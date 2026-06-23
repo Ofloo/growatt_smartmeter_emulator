@@ -1,4 +1,4 @@
-custom_components/growatt_meter_emulator/
+custom_components/growatt_smartmeter_emulator/
 __pycache__/
 *.pyc
 __pycache__/*

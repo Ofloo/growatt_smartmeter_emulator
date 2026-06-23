@@ -243,7 +243,7 @@ Een ongeldige waarde mag nooit zomaar een Modbus register vervuilen.
 Maak:
 
 custom_components/
-    growatt_meter_emulator/
+    growatt_smartmeter_emulator/
         __init__.py
         manifest.json
         config_flow.py

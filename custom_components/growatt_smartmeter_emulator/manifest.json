@@ -1,0 +1,16 @@
+name: SmartMeter Emulator
+domain: growatt_smartmeter_emulator
+version: 1.0.0
+integration_type: hub
+authors:
+  - SmartMeter Emulator Team
+documentation: https://github.com/
+issue_tracker: https://github.com/
+requirements:
+  - pymodbus>=3.6.0
+dependencies:
+  - homeassistant
+codeowners:
+  - @SmartMeterEmulator
+config_flow: true
+single_config_entry: false

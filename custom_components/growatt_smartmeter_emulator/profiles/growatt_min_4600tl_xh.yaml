@@ -1,0 +1,87 @@
+name: Growatt MIN-4600TL-XH
+description: Growatt MIN-4600TL-XH hybrid inverter meter profile
+registers:
+  40001:
+    name: "Active Power"
+    value_type: "int16"
+    scale: 1.0
+    signed: true
+    unit: "W"
+    description: "Active power -2500 to 2500"
+  40002:
+    name: "AC Voltage"
+    value_type: "uint16"
+    scale: 10.0
+    signed: false
+    unit: "V"
+    description: "AC voltage L1 - 230.0V"
+  40003:
+    name: "Current"
+    value_type: "uint16"
+    scale: 10.0
+    signed: false
+    unit: "A"
+    description: "Current L1 - 12.5A"
+  40004:
+    name: "Frequency"
+    value_type: "uint16"
+    scale: 100.0
+    signed: false
+    unit: "Hz"
+    description: "Frequency - 50.00Hz"
+  40005:
+    name: "Import Power"
+    value_type: "uint16"
+    scale: 1.0
+    signed: false
+    unit: "W"
+    description: "Import power from grid"
+  40006:
+    name: "Export Power"
+    value_type: "uint16"
+    scale: 1.0
+    signed: false
+    unit: "W"
+    description: "Export power to grid"
+  40007:
+    name: "Daily Energy Import"
+    value_type: "uint16"
+    scale: 1.0
+    signed: false
+    unit: "kWh"
+    description: "Daily energy import"
+  40008:
+    name: "Daily Energy Export"
+    value_type: "uint16"
+    scale: 1.0
+    signed: false
+    unit: "kWh"
+    description: "Daily energy export"
+  40011:
+    name: "Total Energy Import"
+    value_type: "uint32"
+    scale: 1.0
+    signed: false
+    unit: "kWh"
+    description: "Total energy import"
+  40013:
+    name: "Total Energy Export"
+    value_type: "uint32"
+    scale: 1.0
+    signed: false
+    unit: "kWh"
+    description: "Total energy export"
+  40015:
+    name: "Internal Temperature"
+    value_type: "uint16"
+    scale: 10.0
+    signed: false
+    unit: "C"
+    description: "Internal temperature"
+  40016:
+    name: "Operation Time"
+    value_type: "uint32"
+    scale: 1.0
+    signed: false
+    unit: "hours"
+    description: "Operation time"

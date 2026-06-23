@@ -1,7 +1,7 @@
 """Tests for SmartMeter Emulator const."""
-from custom_components.growatt_meter_emulator.const import DOMAIN
+from custom_components.growatt_smartmeter_emulator.const import DOMAIN
 
 
 def test_domain():
     """Test DOMAIN constant."""
-    assert DOMAIN == "growatt_meter_emulator"
+    assert DOMAIN == "growatt_smartmeter_emulator"

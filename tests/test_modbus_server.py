@@ -2,7 +2,7 @@
 import pytest
 from unittest.mock import MagicMock, patch
 
-from custom_components.growatt_meter_emulator.modbus_server import (
+from custom_components.growatt_smartmeter_emulator.modbus_server import (
     ModbusServer,
     RegisterMapping,
 )
@@ -29,7 +29,7 @@ def test_register_mapping():
 
 def test_modbus_server_init():
     """Test Modbus server initialization."""
-    with patch("custom_components.growatt_meter_emulator.modbus_server._LOGGER"):
+    with patch("custom_components.growatt_smartmeter_emulator.modbus_server._LOGGER"):
         hass = MagicMock()
         entry = MagicMock()
         entry.data = {
@@ -52,7 +52,7 @@ def test_modbus_server_init():
 
 def test_modbus_server_setup_registers():
     """Test register setup."""
-    with patch("custom_components.growatt_meter_emulator.modbus_server._LOGGER"):
+    with patch("custom_components.growatt_smartmeter_emulator.modbus_server._LOGGER"):
         hass = MagicMock()
         entry = MagicMock()
         entry.data = {
@@ -82,7 +82,7 @@ def test_modbus_server_setup_registers():
 
 def test_modbus_server_get_register():
     """Test getting register value."""
-    with patch("custom_components.growatt_meter_emulator.modbus_server._LOGGER"):
+    with patch("custom_components.growatt_smartmeter_emulator.modbus_server._LOGGER"):
         hass = MagicMock()
         entry = MagicMock()
         entry.data = {
@@ -105,7 +105,7 @@ def test_modbus_server_get_register():
 
 def test_modbus_server_update_register_from_sensor():
     """Test updating register from sensor."""
-    with patch("custom_components.growatt_meter_emulator.modbus_server._LOGGER"):
+    with patch("custom_components.growatt_smartmeter_emulator.modbus_server._LOGGER"):
         hass = MagicMock()
         entry = MagicMock()
         entry.data = {
@@ -130,7 +130,7 @@ def test_modbus_server_update_register_from_sensor():
 
 def test_modbus_server_update_register_from_sensor_unavailable():
     """Test updating register with unavailable sensor."""
-    with patch("custom_components.growatt_meter_emulator.modbus_server._LOGGER"):
+    with patch("custom_components.growatt_smartmeter_emulator.modbus_server._LOGGER"):
         hass = MagicMock()
         entry = MagicMock()
         entry.data = {
@@ -155,7 +155,7 @@ def test_modbus_server_update_register_from_sensor_unavailable():
 
 def test_modbus_server_bounds_checking():
     """Test bounds checking."""
-    with patch("custom_components.growatt_meter_emulator.modbus_server._LOGGER"):
+    with patch("custom_components.growatt_smartmeter_emulator.modbus_server._LOGGER"):
         hass = MagicMock()
         entry = MagicMock()
         entry.data = {

@@ -2,7 +2,7 @@
 import pytest
 from unittest.mock import MagicMock
 
-from custom_components.growatt_meter_emulator.config_flow import (
+from custom_components.growatt_smartmeter_emulator.config_flow import (
     STEP_DATA_SCHEMA,
     validate_input,
 )

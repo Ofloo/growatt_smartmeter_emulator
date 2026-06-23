@@ -1,7 +1,7 @@
 """Tests for SmartMeter Emulator coordinator."""
 from unittest.mock import MagicMock, patch
 
-from custom_components.growatt_meter_emulator.coordinator import SensorValue
+from custom_components.growatt_smartmeter_emulator.coordinator import SensorValue
 
 
 def test_sensor_value_dataclass():
@@ -19,9 +19,9 @@ def test_sensor_value_dataclass():
 
 def test_coordinator_creation():
     """Test coordinator can be created."""
-    with patch("custom_components.growatt_meter_emulator.coordinator.DataUpdateCoordinator"):
-        with patch("custom_components.growatt_meter_emulator.coordinator._LOGGER"):
-            from custom_components.growatt_meter_emulator.coordinator import (
+    with patch("custom_components.growatt_smartmeter_emulator.coordinator.DataUpdateCoordinator"):
+        with patch("custom_components.growatt_smartmeter_emulator.coordinator._LOGGER"):
+            from custom_components.growatt_smartmeter_emulator.coordinator import (
                 SmartMeterEmulatorCoordinator,
             )
 
