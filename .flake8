@@ -1,0 +1,11 @@
+[flake8]
+max-line-length = 88
+exclude = .git,__pycache__,tests,build,dist
+
+[pylint]
+max-line-length = 100
+disable = C0301,C0302
+
+[pytest]
+asyncio_mode = auto
+testpaths = tests

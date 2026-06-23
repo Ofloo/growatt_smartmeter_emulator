@@ -1,0 +1,23 @@
+custom_components/growatt_meter_emulator/
+__pycache__/
+*.pyc
+__pycache__/*
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+.pytype/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
