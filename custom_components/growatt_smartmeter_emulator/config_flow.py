@@ -10,6 +10,7 @@ from homeassistant.const import (
     CONF_PORT,
     CONF_SLAVE,
 )
+from homeassistant.helpers.selector import SelectSelector, SelectSelectorConfig, SelectSelectorMode
 
 from .const import DOMAIN
 
@@ -22,6 +23,13 @@ STEP_DATA_SCHEMA = vol.Schema(
         vol.Optional("voltage_sensor"): str,
         vol.Optional("current_sensor"): str,
         vol.Optional("frequency_sensor"): str,
+        vol.Optional("frequency", default=50): SelectSelector(
+            SelectSelectorConfig(
+                options=["50", "60"],
+                mode=SelectSelectorMode.DROPDOWN,
+                translation_key="frequency",
+            )
+        ),
     }
 )
 

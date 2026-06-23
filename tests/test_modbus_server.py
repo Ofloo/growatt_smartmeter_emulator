@@ -183,5 +183,47 @@ def test_modbus_server_bounds_checking():
         assert server.register_map[40001].value == -32768
 
 
+def test_modbus_server_frequency_default():
+    """Test Modbus server uses default frequency (50 Hz) if no sensor is configured."""
+    with patch("custom_components.growatt_smartmeter_emulator.modbus_server._LOGGER"):
+        hass = MagicMock()
+        entry = MagicMock()
+        entry.data = {
+            "host": "0.0.0.0",
+            "port": 502,
+            "slave": 1,
+            "power_sensor": "sensor.test_power",
+            "frequency": 50,  # Default
+        }
+        entry.entry_id = "test_entry"
+
+        server = ModbusServer(hass, entry)
+        server.setup_registers()
+
+        # Check if default frequency (50 Hz) is used (50 * 100 = 5000)
+        assert server.register_map[40004].value == 5000
+
+
+def test_modbus_server_frequency_custom():
+    """Test Modbus server uses custom frequency (60 Hz) if specified."""
+    with patch("custom_components.growatt_smartmeter_emulator.modbus_server._LOGGER"):
+        hass = MagicMock()
+        entry = MagicMock()
+        entry.data = {
+            "host": "0.0.0.0",
+            "port": 502,
+            "slave": 1,
+            "power_sensor": "sensor.test_power",
+            "frequency": 60,  # Custom
+        }
+        entry.entry_id = "test_entry"
+
+        server = ModbusServer(hass, entry)
+        server.setup_registers()
+
+        # Check if custom frequency (60 Hz) is used (60 * 100 = 6000)
+        assert server.register_map[40004].value == 6000
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

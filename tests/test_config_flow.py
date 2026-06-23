@@ -85,6 +85,47 @@ def test_validate_input_invalid_slave():
     asyncio.run(run_test())
 
 
+def test_validate_input_frequency_default():
+    """Test validation with default frequency (50 Hz)."""
+    data = {
+        "host": "0.0.0.0",
+        "port": 502,
+        "slave": 1,
+        "power_sensor": "sensor.test_power",
+    }
+
+    import asyncio
+
+    async def run_test():
+        result = await validate_input(MagicMock(), data)
+        assert result["title"] == "Growatt Meter Emulator"
+        # Default frequency should be 50
+        assert data.get("frequency", 50) == 50
+
+    asyncio.run(run_test())
+
+
+def test_validate_input_frequency_custom():
+    """Test validation with custom frequency (60 Hz)."""
+    data = {
+        "host": "0.0.0.0",
+        "port": 502,
+        "slave": 1,
+        "power_sensor": "sensor.test_power",
+        "frequency": 60,
+    }
+
+    import asyncio
+
+    async def run_test():
+        result = await validate_input(MagicMock(), data)
+        assert result["title"] == "Growatt Meter Emulator"
+        # Custom frequency should be preserved
+        assert data.get("frequency") == 60
+
+    asyncio.run(run_test())
+
+
 def test_validate_input_invalid_host():
     """Test validation with empty host."""
     data = {
