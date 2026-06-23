@@ -1,16 +1,17 @@
-name: SmartMeter Emulator
-domain: growatt_smartmeter_emulator
-version: 1.0.0
-integration_type: hub
-authors:
-  - SmartMeter Emulator Team
-documentation: https://github.com/
-issue_tracker: https://github.com/
-requirements:
-  - pymodbus>=3.6.0
-dependencies:
-  - homeassistant
-codeowners:
-  - @SmartMeterEmulator
-config_flow: true
-single_config_entry: false
+{
+  "name": "SmartMeter Emulator",
+  "domain": "growatt_smartmeter_emulator",
+  "version": "1.0.0",
+  "integration_type": "hub",
+  "documentation": "https://github.com/Ofloo/growatt_smartmeter_emulator",
+  "issue_tracker": "https://github.com/Ofloo/growatt_smartmeter_emulator/issues",
+  "requirements": [
+    "pymodbus>=3.6.0"
+  ],
+  "dependencies": [],
+  "codeowners": [
+    "@Ofloo"
+  ],
+  "config_flow": true,
+  "single_config_entry": false
+}
