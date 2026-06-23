@@ -150,6 +150,26 @@ def test_validate_input_entity_selector():
     asyncio.run(run_test())
 
 
+def test_validate_input_debug_logging():
+    """Test validation with debug_logging enabled."""
+    data = {
+        "host": "0.0.0.0",
+        "port": 502,
+        "slave": 1,
+        "power_sensor": "sensor.test_power",
+        "debug_logging": True,
+    }
+
+    import asyncio
+
+    async def run_test():
+        result = await validate_input(MagicMock(), data)
+        assert result["title"] == "Growatt Meter Emulator"
+        assert data["debug_logging"] is True
+
+    asyncio.run(run_test())
+
+
 def test_validate_input_invalid_host():
     """Test validation with empty host."""
     data = {

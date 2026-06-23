@@ -41,6 +41,7 @@ STEP_DATA_SCHEMA = vol.Schema(
                 translation_key="frequency",
             )
         ),
+        vol.Optional("debug_logging", default=False): bool,
     }
 )
 
@@ -60,6 +61,9 @@ async def validate_input(hass: HomeAssistant, data: dict) -> dict[str, str]:
 
     if not data.get("power_sensor"):
         errors["power_sensor"] = "required_sensor"
+
+    if "debug_logging" not in data:
+        data["debug_logging"] = False
 
     if errors:
         raise InvalidInput(errors=errors)

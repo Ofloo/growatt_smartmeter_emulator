@@ -302,6 +302,29 @@ def test_modbus_server_start():
 
 
 
+def test_modbus_server_port_in_use():
+    """Test of de server een fout gooit als de poort al in gebruik is."""
+    from unittest.mock import MagicMock, patch
+
+    hass = MagicMock()
+    entry = MagicMock()
+    entry.data = {
+        "host": "0.0.0.0",
+        "port": 502,
+        "slave": 1,
+        "power_sensor": "sensor.test_power",
+        "debug_logging": True,
+    }
+    entry.entry_id = "test_entry"
+
+    server = ModbusServer(hass, entry)
+
+    # Simuleer dat de poort in gebruik is
+    with patch.object(server, 'is_port_in_use', return_value=True):
+        with pytest.raises(RuntimeError, match="Port 502 is already in use"):
+            server.start()
+
+
 def test_modbus_server_start_import_error():
     """Test of start() een ImportError gooit als pymodbus niet kan worden geïmporteerd."""
     from unittest.mock import MagicMock, patch

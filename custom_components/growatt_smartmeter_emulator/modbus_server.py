@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import socket
 from dataclasses import dataclass
 
 from homeassistant.core import HomeAssistant
@@ -54,6 +55,14 @@ class ModbusServer:
         self.host = config_entry.data.get(CONF_HOST, "0.0.0.0")
         self.port = config_entry.data.get(CONF_PORT, 502)
         self.slave_id = config_entry.data.get(CONF_SLAVE, 1)
+        self.debug_logging = config_entry.data.get("debug_logging", False)  # Lees debug_logging
+
+        # Configureer logging
+        if self.debug_logging:
+            _LOGGER.setLevel(logging.DEBUG)
+            _LOGGER.debug("Debug logging enabled for Modbus server")
+        else:
+            _LOGGER.setLevel(logging.INFO)
 
         self.register_map: dict[int, RegisterMapping] = {}
         self.server = None
@@ -151,15 +160,34 @@ class ModbusServer:
             return self.register_map[address].value
         return None
 
+    def is_port_in_use(self, port: int) -> bool:
+        """Check if a port is already in use."""
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            return s.connect_ex(("0.0.0.0", port)) == 0
+
     def start(self) -> None:
         """Start the Modbus server."""
+        if self.debug_logging:
+            _LOGGER.debug("Starting Modbus server setup")
         self.setup_registers()
+        if self.debug_logging:
+            _LOGGER.debug("Registers setup complete")
+
+        if self.debug_logging:
+            _LOGGER.debug("Checking if port %s is in use", self.port)
+        if self.is_port_in_use(self.port):
+            _LOGGER.error("Port %s is already in use", self.port)
+            raise RuntimeError(f"Port {self.port} is already in use")
 
         store = ModbusSequentialDataBlock(0, [0] * 100)
+        if self.debug_logging:
+            _LOGGER.debug("Created ModbusSequentialDataBlock")
 
         # Maak een ModbusServerContext met een lege ModbusDeviceContext (pymodbus v3.6.0+)
         dummy_device = ModbusDeviceContext()
         context = ModbusServerContext(devices={0: dummy_device})
+        if self.debug_logging:
+            _LOGGER.debug("Created ModbusServerContext with dummy device")
 
         identity = ModbusDeviceIdentification()
         identity.VendorName = "SmartMeter Emulator"
@@ -168,17 +196,34 @@ class ModbusServer:
         identity.ProductName = "SmartMeter Emulator"
         identity.ModelName = "SmartMeter Emulator"
         identity.MajorMinor = "1.0.0"
+        if self.debug_logging:
+            _LOGGER.debug("Configured ModbusDeviceIdentification")
 
-        self.server = StartAsyncTcpServer(
-            context=context,
-            identity=identity,
-            address=(self.host, self.port),
-        )
+        if self.debug_logging:
+            _LOGGER.debug("Starting Modbus server on %s:%s", self.host, self.port)
+        try:
+            self.server = StartAsyncTcpServer(
+                context=context,
+                identity=identity,
+                address=(self.host, self.port),
+            )
+            if self.debug_logging:
+                _LOGGER.debug("Modbus server started successfully")
 
-        self.running = True
-        _LOGGER.info(
-            "Growatt Modbus server started on %s:%d", self.host, self.port
-        )
+            # Valideer dat de server luistert op de poort
+            if self.debug_logging:
+                _LOGGER.debug("Validating that the server is listening on port %s", self.port)
+                if not self.is_port_in_use(self.port):
+                    _LOGGER.error("Modbus server is not listening on port %s", self.port)
+                    raise RuntimeError(f"Modbus server is not listening on port {self.port}")
+
+            self.running = True
+            _LOGGER.info(
+                "Growatt Modbus server started on %s:%d", self.host, self.port
+            )
+        except Exception as e:
+            _LOGGER.error("Failed to start Modbus server: %s", e, exc_info=self.debug_logging)
+            raise
 
     def stop(self) -> None:
         """Stop the Modbus server."""
