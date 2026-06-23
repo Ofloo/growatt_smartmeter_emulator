@@ -1,0 +1,5 @@
+{
+  "name": "Growatt SmartMeter Emulator",
+  "homeassistant": "2024.1.0",
+  "render_readme": true
+}
