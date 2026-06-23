@@ -251,5 +251,77 @@ def test_modbus_server_frequency_dropdown_only():
         assert server.register_map[40004].value == 5000  # Still 50 Hz
 
 
+
+def test_modbus_server_start():
+    """Test of de start()-methode een ModbusServerContext correct initialiseert."""
+    from unittest.mock import MagicMock, patch
+    from pymodbus.datastore import ModbusSequentialDataBlock
+    from pymodbus.server import StartAsyncTcpServer
+
+    # Mock pymodbus-klassen
+    with (
+        patch("custom_components.growatt_smartmeter_emulator.modbus_server.ModbusSequentialDataBlock") as mock_block,
+        patch("custom_components.growatt_smartmeter_emulator.modbus_server.ModbusServerContext") as mock_server_context,
+        patch("custom_components.growatt_smartmeter_emulator.modbus_server.StartAsyncTcpServer") as mock_start_server,
+    ):
+
+        # Configureer mocks
+        mock_store = MagicMock(spec=ModbusSequentialDataBlock)
+        mock_block.return_value = mock_store
+
+        mock_context = MagicMock()
+        mock_server_context.return_value = mock_context
+
+        # Simuleer ConfigEntry
+        hass = MagicMock()
+        entry = MagicMock()
+        entry.data = {
+            "host": "0.0.0.0",
+            "port": 502,
+            "slave": 1,  # slave_id = 1
+            "power_sensor": "sensor.test_power",
+            "frequency": 50,
+        }
+        entry.entry_id = "test_entry"
+
+        # Initialiseer ModbusServer
+        server = ModbusServer(hass, entry)
+
+        # Roep start() aan
+        server.start()
+
+        # Controleer of ModbusSequentialDataBlock correct wordt aangemaakt
+        mock_block.assert_called_once_with(0, [0] * 100)
+
+        # Controleer of ModbusServerContext correct wordt geïnitialiseerd
+        mock_server_context.assert_called_once_with(slaves={}, single=True)
+
+        # Controleer of StartAsyncTcpServer wordt aangeroepen
+        mock_start_server.assert_called_once()
+
+
+def test_modbus_server_start_import_error():
+    """Test of start() een ImportError gooit als pymodbus niet kan worden geïmporteerd."""
+    from unittest.mock import MagicMock, patch
+
+    hass = MagicMock()
+    entry = MagicMock()
+    entry.data = {
+        "host": "0.0.0.0",
+        "port": 502,
+        "slave": 1,
+        "power_sensor": "sensor.test_power",
+        "frequency": 50,
+    }
+    entry.entry_id = "test_entry"
+
+    server = ModbusServer(hass, entry)
+
+    # Mock de start()-methode om een ImportError te gooien
+    with patch.object(server, 'start', side_effect=ImportError("Failed to import pymodbus")):
+        with pytest.raises(ImportError):
+            server.start()
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

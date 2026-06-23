@@ -20,7 +20,7 @@ _LOGGER = logging.getLogger(__name__)
 
 try:
     from pymodbus.server import StartAsyncTcpServer
-    from pymodbus.datastore import ModbusDeviceContext, ModbusSequentialDataBlock
+    from pymodbus.datastore import ModbusServerContext, ModbusSequentialDataBlock
     from pymodbus import ModbusDeviceIdentification
 except ImportError as err:
     _LOGGER.error("Failed to import pymodbus: %s", err)
@@ -156,8 +156,9 @@ class ModbusServer:
         self.setup_registers()
 
         store = ModbusSequentialDataBlock(0, [0] * 100)
-        context = ModbusDeviceContext()
-        context[self.slave_id] = store
+
+        # Maak een ModbusServerContext zonder slave_context (pymodbus v3.6.0+)
+        context = ModbusServerContext(slaves={}, single=True)
 
         identity = ModbusDeviceIdentification()
         identity.VendorName = "SmartMeter Emulator"
