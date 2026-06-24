@@ -21,9 +21,8 @@ _LOGGER = logging.getLogger(__name__)
 
 try:
     from pymodbus.server import StartAsyncTcpServer
-    from pymodbus.datastore import ModbusSequentialDataBlock
+    from pymodbus.simulator import SimData, SimDevice, DataType
     from pymodbus import ModbusDeviceIdentification
-    from pymodbus.datastore.simulator import ModbusSimulatorContext
 except ImportError as err:
     _LOGGER.error("Failed to import pymodbus: %s", err)
     raise

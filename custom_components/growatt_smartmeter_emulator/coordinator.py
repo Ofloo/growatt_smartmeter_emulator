@@ -25,6 +25,7 @@ class SmartMeterEmulatorCoordinator:
         self.hass = hass
         self.config_entry = config_entry
         self.modbus_server = modbus_server
+        self.sensors: dict[str, float] = {}
         self.sensors_map: dict[int, str] = {
             40001: config_entry.data.get("power_sensor"),
             40002: config_entry.data.get("voltage_sensor"),
@@ -35,7 +36,7 @@ class SmartMeterEmulatorCoordinator:
             hass,
             _LOGGER,
             cooldown=0.1,
-            immediate=False,
+            immediate=True,
             function=self._handle_sensor_update,
         )
 
@@ -58,17 +59,23 @@ class SmartMeterEmulatorCoordinator:
             return
 
         if new_state.state in ("unavailable", "unknown"):
-            return
-
-        try:
-            value = float(new_state.state)
-        except (ValueError, TypeError) as err:
-            _LOGGER.warning("Invalid sensor value for %s: %s", entity_id, err)
-            return
+            _LOGGER.warning("Sensor %s is unavailable, gebruik standaardwaarde 0", entity_id)
+            value = 0.0
+        else:
+            try:
+                value = float(new_state.state)
+            except (ValueError, TypeError) as err:
+                _LOGGER.warning("Invalid sensor value for %s: %s", entity_id, err)
+                return
 
         for address, sensor_entity_id in self.sensors_map.items():
             if sensor_entity_id == entity_id:
                 register_value = int(value * 10)
                 self.modbus_server.update_register(address, register_value)
+                self.sensors[entity_id] = value
                 _LOGGER.debug("Register update: %d = %d (sensor: %s)", address, register_value, entity_id)
                 break
+
+    def get_sensor_value(self, entity_id: str) -> float | None:
+        """Get the current value of a sensor."""
+        return self.sensors.get(entity_id)
