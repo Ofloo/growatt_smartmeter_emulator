@@ -20,12 +20,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up the SmartMeter Emulator integration."""
     hass.data.setdefault(DOMAIN, {})
 
-    coordinator = SmartMeterEmulatorCoordinator(hass, entry)
-    hass.data[DOMAIN][entry.entry_id] = coordinator
-
     modbus_server = ModbusServer(hass, entry)
     await modbus_server.start()
     hass.data[DOMAIN]["modbus_server"] = modbus_server
+
+    coordinator = SmartMeterEmulatorCoordinator(hass, entry, modbus_server)
+    hass.data[DOMAIN][entry.entry_id] = coordinator
+    await coordinator.async_setup_listeners()
 
     entry.async_on_unload(entry.add_update_listener(async_update_entry))
     entry.async_on_unload(lambda: hass.async_create_task(modbus_server.stop()))
@@ -40,6 +41,10 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     modbus_server = hass.data[DOMAIN].get("modbus_server")
     if modbus_server:
         await modbus_server.stop()
+
+    coordinator = hass.data[DOMAIN].get(entry.entry_id)
+    if coordinator:
+        coordinator.sensors_map.clear()
 
     return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
 

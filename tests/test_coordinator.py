@@ -1,33 +1,27 @@
 """Tests for SmartMeter Emulator coordinator."""
 from unittest.mock import MagicMock, patch
 
-from custom_components.growatt_smartmeter_emulator.coordinator import SensorValue
-
-
-def test_sensor_value_dataclass():
-    """Test SensorValue dataclass."""
-    value = SensorValue(
-        value=100.0,
-        entity_id="sensor.test",
-        last_updated=1234567890,
-    )
-
-    assert value.value == 100.0
-    assert value.entity_id == "sensor.test"
-    assert value.last_updated == 1234567890
-
 
 def test_coordinator_creation():
     """Test coordinator can be created."""
-    with patch("custom_components.growatt_smartmeter_emulator.coordinator.DataUpdateCoordinator"):
-        with patch("custom_components.growatt_smartmeter_emulator.coordinator._LOGGER"):
-            from custom_components.growatt_smartmeter_emulator.coordinator import (
-                SmartMeterEmulatorCoordinator,
-            )
+    with patch("custom_components.growatt_smartmeter_emulator.coordinator._LOGGER"):
+        from custom_components.growatt_smartmeter_emulator.coordinator import (
+            SmartMeterEmulatorCoordinator,
+        )
+        from custom_components.growatt_smartmeter_emulator.modbus_server import ModbusServer
 
-            hass = MagicMock()
-            entry = MagicMock()
-            entry.entry_id = "test_entry"
+        hass = MagicMock()
+        entry = MagicMock()
+        entry.entry_id = "test_entry"
+        entry.data = {
+            "power_sensor": "sensor.power",
+            "voltage_sensor": "sensor.voltage",
+            "current_sensor": "sensor.current",
+            "frequency_sensor": "sensor.frequency",
+        }
 
-            coordinator = SmartMeterEmulatorCoordinator(hass, entry)
-            assert coordinator is not None
+        modbus_server = MagicMock(spec=ModbusServer)
+        coordinator = SmartMeterEmulatorCoordinator(hass, entry, modbus_server)
+        assert coordinator is not None
+        assert coordinator.modbus_server == modbus_server
+        assert len(coordinator.sensors_map) == 4

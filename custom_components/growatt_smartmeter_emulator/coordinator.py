@@ -2,88 +2,73 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
-from datetime import timedelta
-
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
+from homeassistant.helpers.event import async_track_state_change_event
+from homeassistant.helpers.debounce import Debouncer
 from homeassistant.config_entries import ConfigEntry
+
+from .modbus_server import ModbusServer
 
 _LOGGER = logging.getLogger(__name__)
 
 
-@dataclass
-class SensorValue:
-    """Represents a sensor value with metadata."""
-
-    value: float | None
-    entity_id: str
-    last_updated: float | None = None
-
-
-class SmartMeterEmulatorCoordinator(DataUpdateCoordinator[dict[str, SensorValue]]):
+class SmartMeterEmulatorCoordinator:
     """Coordinate smart meter data from Home Assistant sensors."""
 
     def __init__(
         self,
         hass: HomeAssistant,
         config_entry: ConfigEntry,
+        modbus_server: ModbusServer,
     ) -> None:
         """Initialize my coordinator."""
-        super().__init__(
+        self.hass = hass
+        self.config_entry = config_entry
+        self.modbus_server = modbus_server
+        self.sensors_map: dict[int, str] = {
+            40001: config_entry.data.get("power_sensor"),
+            40002: config_entry.data.get("voltage_sensor"),
+            40003: config_entry.data.get("current_sensor"),
+            40004: config_entry.data.get("frequency_sensor"),
+        }
+        self.debouncer = Debouncer(
             hass,
             _LOGGER,
-            name="SmartMeter Emulator",
-            update_interval=timedelta(seconds=1),
+            cooldown=0.1,
+            immediate=False,
+            function=self._handle_sensor_update,
         )
-        self.config_entry = config_entry
-        self.sensors: dict[str, SensorValue] = {}
 
-    async def _async_update_data(self) -> dict[str, SensorValue]:
-        """Fetch data from sensors."""
-        data = {}
-
-        power_sensor = self.config_entry.data.get("power_sensor")
-        voltage_sensor = self.config_entry.data.get("voltage_sensor")
-        current_sensor = self.config_entry.data.get("current_sensor")
-        frequency_sensor = self.config_entry.data.get("frequency_sensor")
-
-        for sensor_id in [
-            power_sensor,
-            voltage_sensor,
-            current_sensor,
-            frequency_sensor,
-        ]:
-            if sensor_id:
-                try:
-                    state = self.hass.states.get(sensor_id)
-                    if state and state.state not in ("unavailable", "unknown"):
-                        value = float(state.state)
-                        data[sensor_id] = SensorValue(
-                            value=value,
-                            entity_id=sensor_id,
-                            last_updated=state.last_updated.timestamp()
-                            if state.last_updated
-                            else None,
-                        )
-                except (ValueError, TypeError) as err:
-                    _LOGGER.warning(
-                        "Invalid sensor value for %s: %s", sensor_id, err
-                    )
-
-        return data
-
-    def get_sensor_value(self, entity_id: str) -> float | None:
-        """Get the current value of a sensor."""
-        if sensor := self.sensors.get(entity_id):
-            return sensor.value
-        return None
-
-    def update_sensor(
-        self, entity_id: str, value: float
-    ) -> None:
-        """Update a sensor value."""
-        self.sensors[entity_id] = SensorValue(
-            value=value, entity_id=entity_id
+    async def async_setup_listeners(self) -> None:
+        """Setup listeners for sensor state changes with debouncing."""
+        registered_sensors = [sensor for sensor in self.sensors_map.values() if sensor]
+        async_track_state_change_event(
+            self.hass,
+            registered_sensors,
+            self.debouncer.async_call,
         )
-        self.async_update_listeners()
+        _LOGGER.debug("Sensor listeners registered")
+
+    async def _handle_sensor_update(self, event: dict) -> None:
+        """Handle sensor state changes and update Modbus registers."""
+        entity_id = event.get("entity_id")
+        new_state = event.get("new_state")
+
+        if not entity_id or not new_state:
+            return
+
+        if new_state.state in ("unavailable", "unknown"):
+            return
+
+        try:
+            value = float(new_state.state)
+        except (ValueError, TypeError) as err:
+            _LOGGER.warning("Invalid sensor value for %s: %s", entity_id, err)
+            return
+
+        for address, sensor_entity_id in self.sensors_map.items():
+            if sensor_entity_id == entity_id:
+                register_value = int(value * 10)
+                self.modbus_server.update_register(address, register_value)
+                _LOGGER.debug("Register update: %d = %d (sensor: %s)", address, register_value, entity_id)
+                break
