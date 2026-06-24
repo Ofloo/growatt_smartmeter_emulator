@@ -118,8 +118,8 @@ class ModbusServer:
         self.sim_data = SimData(address=0, count=4)
         _LOGGER.debug("Created SimData with 4 holding registers")
 
-        # Maak SimDevice
-        self.device = SimDevice(id=self.slave_id, simdata=self.sim_data)
+        # Maak SimDevice met een lijst van SimData objecten
+        self.device = SimDevice(id=self.slave_id, simdata=[self.sim_data])
         _LOGGER.debug("Created SimDevice with slave ID %d", self.slave_id)
 
         # Maak ModbusDeviceIdentification
