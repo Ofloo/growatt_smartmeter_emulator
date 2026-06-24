@@ -154,7 +154,7 @@ class ModbusServer:
                 "write": [],
                 "repeat": [],
                 "bits": [],
-                "uint16": [[0, 3], {"addr": [0, 3], "value": [0, 2300, 100, 5000]}],
+                "uint16": [{"addr": [0, 3], "value": [0, 2300, 100, 5000]}],
                 "uint32": [],
                 "float32": [],
                 "string": [],
