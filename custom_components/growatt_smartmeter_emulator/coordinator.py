@@ -42,12 +42,30 @@ class SmartMeterEmulatorCoordinator:
         )
         _LOGGER.debug("Sensor listeners registered")
 
-    async def _handle_sensor_update(self, event: dict) -> None:
+    async def _handle_sensor_update(self, event) -> None:
         """Handle sensor state changes and update Modbus registers."""
-        entity_id = event.get("entity_id")
-        new_state = event.get("new_state")
+        # Haal event data op (compatibel met Home Assistant Event object)
+        if hasattr(event, "data"):
+            event_data = event.data
+        elif hasattr(event, "as_dict"):
+            event_data = event.as_dict().get("data", {})
+        else:
+            _LOGGER.error("Ongeldig event object: %s", event)
+            return
+
+        # Haal entity_id en new_state op
+        entity_id = event_data.get("entity_id")
+        new_state = event_data.get("new_state")
+
+        # Logging voor debug
+        _LOGGER.debug(
+            "Event ontvangen: entity_id=%s, new_state=%s",
+            entity_id,
+            new_state.state if new_state else None,
+        )
 
         if not entity_id or not new_state:
+            _LOGGER.warning("Ongeldige event data: %s", event_data)
             return
 
         # Validatie van sensorwaarde
