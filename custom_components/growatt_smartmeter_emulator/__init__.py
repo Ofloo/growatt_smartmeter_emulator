@@ -38,15 +38,29 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
+    _LOGGER.debug("Starting unload of SmartMeter Emulator integration")
+
     modbus_server = hass.data[DOMAIN].get("modbus_server")
     if modbus_server:
+        _LOGGER.debug("Stopping Modbus server")
         await modbus_server.stop()
+        _LOGGER.debug("Modbus server stopped")
+    else:
+        _LOGGER.warning("Modbus server not found in hass.data[DOMAIN]")
 
     coordinator = hass.data[DOMAIN].get(entry.entry_id)
     if coordinator:
+        _LOGGER.debug("Clearing coordinator sensors_map")
         coordinator.sensors_map.clear()
+        _LOGGER.debug("Coordinator sensors_map cleared")
+    else:
+        _LOGGER.warning("Coordinator not found in hass.data[DOMAIN][%s]", entry.entry_id)
 
-    return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    result = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    _LOGGER.debug("Unload platforms result: %s", result)
+
+    _LOGGER.debug("Unload of SmartMeter Emulator integration completed")
+    return result
 
 
 async def async_update_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:

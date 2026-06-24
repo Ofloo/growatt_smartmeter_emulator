@@ -25,28 +25,20 @@ class SmartMeterEmulatorCoordinator:
         self.hass = hass
         self.config_entry = config_entry
         self.modbus_server = modbus_server
-        self.sensors: dict[str, float] = {}
         self.sensors_map: dict[int, str] = {
             40001: config_entry.data.get("power_sensor"),
             40002: config_entry.data.get("voltage_sensor"),
             40003: config_entry.data.get("current_sensor"),
             40004: config_entry.data.get("frequency_sensor"),
         }
-        self.debouncer = Debouncer(
-            hass,
-            _LOGGER,
-            cooldown=0.1,
-            immediate=True,
-            function=self._handle_sensor_update,
-        )
 
     async def async_setup_listeners(self) -> None:
-        """Setup listeners for sensor state changes with debouncing."""
+        """Setup listeners for sensor state changes."""
         registered_sensors = [sensor for sensor in self.sensors_map.values() if sensor]
         async_track_state_change_event(
             self.hass,
             registered_sensors,
-            self.debouncer.async_call,
+            self._handle_sensor_update,
         )
         _LOGGER.debug("Sensor listeners registered")
 
@@ -58,8 +50,11 @@ class SmartMeterEmulatorCoordinator:
         if not entity_id or not new_state:
             return
 
+        # Validatie van sensorwaarde
         if new_state.state in ("unavailable", "unknown"):
-            _LOGGER.warning("Sensor %s is unavailable, gebruik standaardwaarde 0", entity_id)
+            _LOGGER.warning(
+                "Sensor %s is unavailable, gebruik standaardwaarde 0", entity_id
+            )
             value = 0.0
         else:
             try:
@@ -68,14 +63,40 @@ class SmartMeterEmulatorCoordinator:
                 _LOGGER.warning("Invalid sensor value for %s: %s", entity_id, err)
                 return
 
+        # Update de bijbehorende register (adres 40001-40004)
         for address, sensor_entity_id in self.sensors_map.items():
             if sensor_entity_id == entity_id:
-                register_value = int(value * 10)
-                self.modbus_server.update_register(address, register_value)
-                self.sensors[entity_id] = value
-                _LOGGER.debug("Register update: %d = %d (sensor: %s)", address, register_value, entity_id)
+                # Gebruik de scale van de register mapping
+                mapping = self.modbus_server.register_map.get(address)
+                if mapping:
+                    register_value = int(value * mapping.scale)
+                    await self.modbus_server.update_register(address, register_value)
+                    _LOGGER.debug(
+                        "Register update: %d = %d (sensor: %s, raw: %f)",
+                        address,
+                        register_value,
+                        entity_id,
+                        value,
+                    )
+                else:
+                    register_value = int(value * 10)
+                    await self.modbus_server.update_register(address, register_value)
+                    _LOGGER.debug(
+                        "Register update: %d = %d (sensor: %s, raw: %f)",
+                        address,
+                        register_value,
+                        entity_id,
+                        value,
+                    )
                 break
 
     def get_sensor_value(self, entity_id: str) -> float | None:
         """Get the current value of a sensor."""
-        return self.sensors.get(entity_id)
+        for address, sensor_entity_id in self.sensors_map.items():
+            if sensor_entity_id == entity_id:
+                register_value = self.modbus_server.get_register(address)
+                if register_value is not None:
+                    mapping = self.modbus_server.register_map.get(address)
+                    if mapping:
+                        return register_value / mapping.scale
+        return None

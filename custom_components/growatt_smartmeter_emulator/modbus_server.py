@@ -1,6 +1,6 @@
 """Modbus server for SmartMeter Emulator.
 
-Uses pymodbus modern async API.
+Uses pymodbus modern async API with ModbusSlaveContext.
 """
 from __future__ import annotations
 
@@ -17,15 +17,16 @@ from homeassistant.const import (
     CONF_SLAVE,
 )
 
-_LOGGER = logging.getLogger(__name__)
-
 try:
+    from pymodbus.datastore import ModbusServerContext
     from pymodbus.server import StartAsyncTcpServer
-    from pymodbus.simulator import SimData, SimDevice, DataType
     from pymodbus import ModbusDeviceIdentification
 except ImportError as err:
+    _LOGGER = logging.getLogger(__name__)
     _LOGGER.error("Failed to import pymodbus: %s", err)
     raise
+
+_LOGGER = logging.getLogger(__name__)
 
 
 @dataclass
@@ -55,7 +56,7 @@ class ModbusServer:
         self.host = config_entry.data.get(CONF_HOST, "0.0.0.0")
         self.port = config_entry.data.get(CONF_PORT, 502)
         self.slave_id = config_entry.data.get(CONF_SLAVE, 1)
-        self.debug_logging = True  # Forceer debug-logging tijdens ontwikkeling
+        self.debug_logging = config_entry.data.get("debug_logging", True)
 
         # Configureer logging
         if self.debug_logging:
@@ -65,9 +66,9 @@ class ModbusServer:
             _LOGGER.setLevel(logging.INFO)
 
         self.register_map: dict[int, RegisterMapping] = {}
+        self.context = None
         self.server = None
         self.running = False
-        self.loop = None
 
     def setup_registers(self) -> None:
         """Setup register map based on configuration."""
@@ -106,7 +107,38 @@ class ModbusServer:
             ),
         }
 
-    def update_register_from_sensor(self, address: int) -> bool:
+    async def update_register(self, address: int, value: int) -> bool:
+        """Update a register value directly."""
+        if address not in self.register_map:
+            return False
+
+        # Validatie
+        if self.register_map[address].signed:
+            if value < -32768:
+                value = -32768
+            elif value > 32767:
+                value = 32767
+        else:
+            if value < 0:
+                value = 0
+            elif value > 65535:
+                value = 65535
+
+        self.register_map[address].value = value
+
+        # Update de Modbus-context als de server draait
+        if self.context:
+            await self.context.async_OLD_setValues(3, address - 40001, [value])
+            _LOGGER.debug(
+                "Register update: %d = %d (gebaseerd op interne addr %d)",
+                address,
+                value,
+                address - 40001,
+            )
+
+        return True
+
+    async def update_register_from_sensor(self, address: int) -> bool:
         """Update a register value from the corresponding sensor."""
         if address not in self.register_map:
             return False
@@ -134,14 +166,20 @@ class ModbusServer:
                 elif register_value > 65535:
                     register_value = 65535
 
+            # Update de register map
             self.register_map[address].value = register_value
-            _LOGGER.debug(
-                "Register update: %d = %d (sensor: %s, raw: %f)",
-                address,
-                register_value,
-                mapping.sensor_entity_id,
-                sensor_value,
-            )
+
+            # Update de Modbus-context
+            if self.context:
+                await self.context.async_OLD_setValues(3, address - 40001, [register_value])
+                _LOGGER.debug(
+                    "Register update: %d = %d (sensor: %s, raw: %f)",
+                    address,
+                    register_value,
+                    mapping.sensor_entity_id,
+                    sensor_value,
+                )
+
             return True
         except (ValueError, TypeError) as err:
             _LOGGER.warning(
@@ -149,10 +187,10 @@ class ModbusServer:
             )
             return False
 
-    def update_all_registers(self) -> None:
+    async def update_all_registers(self) -> None:
         """Update all registers from their sensors."""
         for address in self.register_map:
-            self.update_register_from_sensor(address)
+            await self.update_register_from_sensor(address)
 
     def get_register(self, address: int) -> int | None:
         """Get a register value."""
@@ -167,20 +205,13 @@ class ModbusServer:
 
     async def start(self) -> None:
         """Start the Modbus server asynchronously."""
-        if self.debug_logging:
-            _LOGGER.debug("Starting Modbus server setup")
+        _LOGGER.debug("Starting Modbus server setup")
         self.setup_registers()
-        if self.debug_logging:
-            _LOGGER.debug("Registers setup complete")
+        _LOGGER.debug("Registers setup complete")
 
-        if self.debug_logging:
-            _LOGGER.debug("Checking if port %s is in use", self.port)
         if self.is_port_in_use(self.port):
             _LOGGER.error("Port %s is already in use", self.port)
             raise RuntimeError(f"Port {self.port} is already in use")
-
-        if self.debug_logging:
-            _LOGGER.debug("Created ModbusSequentialDataBlock")
 
         # Maak een ModbusSimulatorContext met 4 registers (40001-40004)
         # De interne register adressen zijn 0-3, maar de Modbus-protocol gebruikt 40001-40004
@@ -219,10 +250,10 @@ class ModbusServer:
             "string": [],
         }
         from pymodbus.datastore.simulator import ModbusSimulatorContext
-        context = ModbusSimulatorContext(config, custom_actions={})
-        if self.debug_logging:
-            _LOGGER.debug("Created ModbusSimulatorContext with 4 registers")
+        self.context = ModbusSimulatorContext(config, custom_actions={})
+        _LOGGER.debug("Created ModbusSimulatorContext with 4 Holding Registers")
 
+        # Maak ModbusDeviceIdentification
         identity = ModbusDeviceIdentification()
         identity.VendorName = "SmartMeter Emulator"
         identity.ProductCode = "SM-EMUL-001"
@@ -230,42 +261,41 @@ class ModbusServer:
         identity.ProductName = "SmartMeter Emulator"
         identity.ModelName = "SmartMeter Emulator"
         identity.MajorMinor = "1.0.0"
-        if self.debug_logging:
-            _LOGGER.debug("Configured ModbusDeviceIdentification")
+        _LOGGER.debug("Configured ModbusDeviceIdentification")
 
-        if self.debug_logging:
-            _LOGGER.debug("Starting Modbus server on %s:%s", self.host, self.port)
+        # Start de Modbus-server
+        _LOGGER.debug(
+            "Starting Modbus server on %s:%d",
+            self.host,
+            self.port,
+        )
         try:
             self.server = await StartAsyncTcpServer(
-                context=context,
+                context=self.context,
                 identity=identity,
                 address=(self.host, self.port),
             )
-            if self.debug_logging:
-                _LOGGER.debug("Modbus server started successfully")
+            _LOGGER.info(
+                "Growatt Modbus server started on %s:%d (slave ID: %d)",
+                self.host,
+                self.port,
+                self.slave_id,
+            )
 
             # Valideer dat de server luistert op de poort
-            if self.debug_logging:
-                _LOGGER.debug("Validating that the server is listening on port %s", self.port)
-                if not self.is_port_in_use(self.port):
-                    _LOGGER.error("Modbus server is not listening on port %s", self.port)
-                    raise RuntimeError(f"Modbus server is not listening on port {self.port}")
+            if not self.is_port_in_use(self.port):
+                _LOGGER.error("Modbus server is not listening on port %s", self.port)
+                raise RuntimeError(f"Modbus server is not listening on port {self.port}")
 
             self.running = True
-            _LOGGER.info(
-                "Growatt Modbus server started on %s:%d", self.host, self.port
-            )
         except Exception as e:
             _LOGGER.error("Failed to start Modbus server: %s", e, exc_info=self.debug_logging)
             raise
 
     async def stop(self) -> None:
         """Stop the Modbus server asynchronously."""
-        if self.debug_logging:
-            _LOGGER.debug("Stopping Modbus server")
+        _LOGGER.debug("Stopping Modbus server")
         self.running = False
         if self.server:
-            await self.server.stop()
-            if self.debug_logging:
-                _LOGGER.debug("Modbus server stopped successfully")
+            self.server.kill()
             _LOGGER.info("Growatt Modbus server stopped")
