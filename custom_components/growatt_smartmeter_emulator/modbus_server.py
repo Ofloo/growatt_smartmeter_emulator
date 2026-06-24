@@ -186,7 +186,10 @@ class ModbusServer:
         # Maak een ModbusSimulatorContext met 4 registers (40001-40004)
         config = {
             "setup": {
-                "hr size": 4,  # 4 holding registers
+                "co size": 0,  # Coils (8 bit)
+                "di size": 0,  # Discrete inputs (8 bit)
+                "ir size": 0,  # Input registers (16 bit)
+                "hr size": 4,  # Holding registers (16 bit)
             },
             "uint16": [
                 [40001, 40004]  # 4 registers vanaf 40001
