@@ -150,7 +150,14 @@ class ModbusServer:
                         }
                     }
                 },
+                "invalid": [],
+                "write": [],
+                "repeat": [],
+                "bits": [],
                 "uint16": [[0, 3]],
+                "uint32": [],
+                "float32": [],
+                "string": [],
             }
             self.context = ModbusSimulatorContext(config, custom_actions={})
             _LOGGER.warning("Gebruik van deprecated ModbusSimulatorContext (fallback)")
