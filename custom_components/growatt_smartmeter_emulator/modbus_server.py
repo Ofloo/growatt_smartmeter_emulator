@@ -134,8 +134,20 @@ class ModbusServer:
                     "shared blocks": False,
                     "type exception": "none",
                     "defaults": {
-                        "value": {"bits": 0, "uint16": 0},
-                        "action": {"bits": None, "uint16": None},
+                        "value": {
+                            "bits": 0,
+                            "uint16": 0,
+                            "uint32": 0,
+                            "float32": 0,
+                            "string": "",
+                        },
+                        "action": {
+                            "bits": None,
+                            "uint16": None,
+                            "uint32": None,
+                            "float32": None,
+                            "string": None,
+                        }
                     }
                 },
                 "uint16": [[0, 3]],
