@@ -118,11 +118,31 @@ class ModbusServer:
         self.sim_data = SimData(address=0, count=4)
         _LOGGER.debug("Created SimData with 4 holding registers")
 
-        # Maak SimDevice met een lijst van SimData objecten
-        self.device = SimDevice(id=self.slave_id, simdata=[self.sim_data])
-        _LOGGER.debug("Created SimDevice with slave ID %d", self.slave_id)
-
-        # Maak ModbusDeviceIdentification
+        # Probeer SimDevice initialisatie (nieuwe API)
+        try:
+            self.device = SimDevice(id=self.slave_id, simdata=[self.sim_data])
+            _LOGGER.debug("Created SimDevice with slave ID %d", self.slave_id)
+        except TypeError as simdevice_err:
+            _LOGGER.warning("SimDevice initialisatie mislukt: %s (fallback naar ModbusSimulatorContext)", simdevice_err)
+            from pymodbus.datastore.simulator import ModbusSimulatorContext
+            config = {
+                "setup": {
+                    "co size": 0,
+                    "di size": 0,
+                    "ir size": 0,
+                    "hr size": 4,
+                    "shared blocks": False,
+                    "type exception": "none",
+                    "defaults": {
+                        "value": {"bits": 0, "uint16": 0},
+                        "action": {"bits": None, "uint16": None},
+                    }
+                },
+                "uint16": [[0, 3]],
+            }
+            self.context = ModbusSimulatorContext(config, custom_actions={})
+            _LOGGER.warning("Gebruik van deprecated ModbusSimulatorContext (fallback)")
+        _LOGGER.debug("Configured ModbusDeviceIdentification")
         identity = ModbusDeviceIdentification()
         identity.VendorName = "SmartMeter Emulator"
         identity.ProductCode = "SM-EMUL-001"
@@ -137,7 +157,6 @@ class ModbusServer:
         try:
             self.server = await StartAsyncTcpServer(
                 context=self.device,
-                identity=identity,
                 address=(self.host, self.port),
             )
             _LOGGER.info(
