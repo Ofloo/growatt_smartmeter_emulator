@@ -184,16 +184,40 @@ class ModbusServer:
             _LOGGER.debug("Created ModbusSequentialDataBlock")
 
         # Maak een ModbusSimulatorContext met 4 registers (40001-40004)
+        # De interne register adressen zijn 0-3, maar de Modbus-protocol gebruikt 40001-40004
         config = {
             "setup": {
-                "co size": 0,  # Coils (8 bit)
-                "di size": 0,  # Discrete inputs (8 bit)
-                "ir size": 0,  # Input registers (16 bit)
-                "hr size": 4,  # Holding registers (16 bit)
+                "co size": 0,
+                "di size": 0,
+                "ir size": 0,
+                "hr size": 4,
+                "shared blocks": False,
+                "type exception": "none",
+                "defaults": {
+                    "value": {
+                        "bits": 0,
+                        "uint16": 0,
+                        "uint32": 0,
+                        "float32": 0,
+                        "string": "",
+                    },
+                    "action": {
+                        "bits": None,
+                        "uint16": None,
+                        "uint32": None,
+                        "float32": None,
+                        "string": None,
+                    }
+                }
             },
-            "uint16": [
-                [40001, 40004]  # 4 registers vanaf 40001
-            ]
+            "invalid": [],
+            "write": [],
+            "repeat": [],
+            "bits": [],
+            "uint16": [[0, 3]],
+            "uint32": [],
+            "float32": [],
+            "string": [],
         }
         from pymodbus.datastore.simulator import ModbusSimulatorContext
         context = ModbusSimulatorContext(config, custom_actions={})
