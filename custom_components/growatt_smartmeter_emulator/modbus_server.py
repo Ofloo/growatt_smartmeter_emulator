@@ -52,7 +52,7 @@ class ModbusServer:
         self.hass = hass
         self.config_entry = config_entry
         self.host = config_entry.data.get(CONF_HOST, "0.0.0.0")
-        self.port = config_entry.data.get(CONF_PORT, 502)
+        self.port = config_entry.data.get(CONF_PORT, 5020)
         self.slave_id = config_entry.data.get(CONF_SLAVE, 1)
         self.debug_logging = config_entry.data.get("debug_logging", True)
 
@@ -154,7 +154,7 @@ class ModbusServer:
                 "write": [],
                 "repeat": [],
                 "bits": [],
-                "uint16": [[0, 3]],
+                "uint16": [[0, 3], {"addr": [0, 3], "value": [0, 2300, 100, 5000]}],
                 "uint32": [],
                 "float32": [],
                 "string": [],
