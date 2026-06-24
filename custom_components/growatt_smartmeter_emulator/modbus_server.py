@@ -113,7 +113,9 @@ class ModbusServer:
         _LOGGER.debug("Registers setup complete")
 
         # Maak SimData met 4 holding registers (0-3)
-        self.sim_data = SimData(address=0, count=4, values=0)
+        # Gebruik de juiste syntax voor de pymodbus API
+        # values=0 werkt als scalar, maar niet als datatype=INVALID
+        self.sim_data = SimData(address=0, count=4)
         _LOGGER.debug("Created SimData with 4 holding registers")
 
         # Maak SimDevice
