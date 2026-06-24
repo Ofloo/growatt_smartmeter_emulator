@@ -219,7 +219,23 @@ class ModbusServer:
         # Update de SimData (interne adres: address - 40001)
         if self.sim_data:
             internal_address = address - 40001
-            self.sim_data.setValues(internal_address, [value])
+            # Update de Modbus-context (als beschikbaar)
+            if self.context:
+                internal_address = address - 40001
+                try:
+                    if hasattr(self.context, "async_OLD_setValues"):
+                        await self.context.async_OLD_setValues(3, internal_address, [value])
+                    else:
+                        # Probeer standaard setValues (voor nieuwe API)
+                        self.context.setValues(3, internal_address, [value])
+                except AttributeError:
+                    _LOGGER.warning("Geen ondersteunde setValues methode in context")
+                _LOGGER.debug(
+                    "Register update: %d = %d (internal address: %d)",
+                    address,
+                    value,
+                    internal_address,
+                )
             _LOGGER.debug(
                 "Register update: %d = %d (internal address: %d)",
                 address,
