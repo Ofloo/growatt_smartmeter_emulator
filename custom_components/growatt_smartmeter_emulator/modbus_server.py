@@ -1,6 +1,6 @@
 """Modbus server for SmartMeter Emulator.
 
-Uses pymodbus modern async API with ModbusSlaveContext.
+Uses pymodbus modern async API with ModbusDeviceContext.
 """
 from __future__ import annotations
 
@@ -129,7 +129,7 @@ class ModbusServer:
         hr_values = [0, 2300, 100, 5000]
         hr_block = ModbusSequentialDataBlock(1, hr_values)
         self.context = ModbusDeviceContext(hr=hr_block)
-        _LOGGER.debug("Created ModbusServerContext with 4 holding registers")
+        _LOGGER.debug("Created ModbusDeviceContext with 4 holding registers")
 
         identity = ModbusDeviceIdentification()
         identity.VendorName = "SmartMeter Emulator"
