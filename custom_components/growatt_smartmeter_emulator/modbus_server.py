@@ -1,6 +1,6 @@
 """Modbus server for SmartMeter Emulator.
 
-Uses pymodbus modern async API with ModbusSimulatorContext.
+Uses pymodbus modern async API with ModbusSlaveContext.
 """
 from __future__ import annotations
 
@@ -17,14 +17,19 @@ from homeassistant.const import (
 )
 
 try:
-    from pymodbus.server import StartAsyncTcpServer
-    from pymodbus import ModbusDeviceIdentification
+from pymodbus.server import StartAsyncTcpServer
+from pymodbus import ModbusDeviceIdentification
+# Importeren van ModbusSimulatorContext (deprecated, maar beschikbaar in v3.13.1)
+from pymodbus.datastore.simulator import ModbusSimulatorContext
 except ImportError as err:
     _LOGGER = logging.getLogger(__name__)
     _LOGGER.error("Failed to import pymodbus: %s", err)
     raise
 
 _LOGGER = logging.getLogger(__name__)
+
+# Globale variabelen voor registerwaarden (40001-40004: Power, Voltage, Current, Frequency)
+register_values = [0, 2300, 100, 5000]
 
 
 @dataclass
@@ -126,8 +131,7 @@ class ModbusServer:
         self.setup_registers()
         _LOGGER.debug("Registers setup complete")
 
-        # Maak een ModbusSimulatorContext met 4 registers (40001-40004)
-        from pymodbus.datastore.simulator import ModbusSimulatorContext
+        # Maak een ModbusSimulatorContext lege initialisatie
         config = {
             "setup": {
                 "co size": 0,
@@ -157,13 +161,19 @@ class ModbusServer:
             "write": [],
             "repeat": [],
             "bits": [],
-            "uint16": [{"addr": [0, 3], "value": [0, 2300, 100, 5000]}],
+            "uint16": [],
             "uint32": [],
             "float32": [],
             "string": [],
         }
+        
         self.context = ModbusSimulatorContext(config, custom_actions={})
         _LOGGER.debug("Created ModbusSimulatorContext with 4 holding registers")
+        
+        # Volledig overschrijf de registers met initiele waarden
+        for i, value in enumerate(register_values):
+            self.context.registers[i].value = value
+            _LOGGER.debug("Initialized register %d with value %d", i, value)
 
         # Maak ModbusDeviceIdentification
         identity = ModbusDeviceIdentification()
@@ -221,23 +231,20 @@ class ModbusServer:
 
         self.register_map[address].value = value
 
-        # Update de Modbus-context (interne adres: address - 40001)
-        if self.context:
+        # Update de register waarden direct (gebruik globale variabele)
+        if self.context and address in self.register_map:
             internal_address = address - 40001
             try:
-                # Gebruik async_OLD_setValues voor deprecated API
-                if hasattr(self.context, "async_OLD_setValues"):
-                    await self.context.async_OLD_setValues(3, internal_address, [value])
-                else:
-                    _LOGGER.warning("Geen ondersteunde setValues methode in context")
+                register_values[internal_address] = value
                 _LOGGER.debug(
                     "Register update: %d = %d (internal address: %d)",
                     address,
                     value,
                     internal_address,
                 )
+                return True
             except Exception as err:
-                _LOGGER.warning("Failed to update register: %s", err)
+                _LOGGER.error("Failed to update register: %s", err)
                 return False
 
         return True
@@ -273,14 +280,11 @@ class ModbusServer:
             # Update de register map
             self.register_map[address].value = register_value
 
-            # Update de Modbus-context
-            if self.context:
+            # Update de register waarden direct (gebruik globale variabele)
+            if self.context and address in self.register_map:
                 internal_address = address - 40001
                 try:
-                    if hasattr(self.context, "async_OLD_setValues"):
-                        await self.context.async_OLD_setValues(3, internal_address, [register_value])
-                    else:
-                        _LOGGER.warning("Geen ondersteunde setValues methode in context")
+                    register_values[internal_address] = register_value
                     _LOGGER.debug(
                         "Register update: %d = %d (sensor: %s, raw: %f)",
                         address,
@@ -288,11 +292,12 @@ class ModbusServer:
                         mapping.sensor_entity_id,
                         sensor_value,
                     )
+                    return True
                 except Exception as err:
-                    _LOGGER.warning("Failed to update register: %s", err)
+                    _LOGGER.error("Failed to update register: %s", err)
                     return False
 
-            return True
+            return False
         except (ValueError, TypeError) as err:
             _LOGGER.warning(
                 "Invalid sensor value for %s: %s", mapping.sensor_entity_id, err
