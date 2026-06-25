@@ -447,7 +447,7 @@ class ModbusSimulatorContext:
     """
 
     # --------------------------------------------
-    # External interfaces
+    # Simulator server interface
     # --------------------------------------------
     start_time = int(datetime.now().timestamp())
 
@@ -465,6 +465,20 @@ class ModbusSimulatorContext:
         self.registerType_name_to_id: Dict[str, int] = {}
         self.registerType_id_to_name: List[str] = []
         Setup(self).setup(config, custom_actions)
+
+    def slaves(self):
+        """Return list of slave IDs.
+        
+        For ModbusSimulatorContext, we return [0] as it represents a single slave.
+        """
+        return [0]
+        
+    def __getitem__(self, slave):
+        """Get slave context.
+        
+        For ModbusSimulatorContext, we always return self as it represents a single slave.
+        """
+        return self
 
     # --------------------------------------------
     # Simulator server interface
