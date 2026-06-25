@@ -1,11 +1,12 @@
 """Modbus server for SmartMeter Emulator.
 
-Uses pymodbus modern async API with SimData/SimDevice.
+Uses pymodbus modern async API with ModbusSimulatorContext.
 """
 from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from typing import Any
 
 from homeassistant.core import HomeAssistant
 from homeassistant.config_entries import ConfigEntry
@@ -16,7 +17,6 @@ from homeassistant.const import (
 )
 
 try:
-    from pymodbus.simulator import SimData, SimDevice
     from pymodbus.server import StartAsyncTcpServer
     from pymodbus import ModbusDeviceIdentification
 except ImportError as err:
@@ -40,6 +40,21 @@ class RegisterMapping:
     description: str = ""
 
 
+class CustomRequestHandler:
+    """Custom request handler placeholder (niet beschikbaar in pymodbus 3.13.1)."""
+
+    def __init__(self, server: Any = None) -> None:
+        """Initialize custom request handler."""
+        self.server = server
+
+    def execute(self, request: Any) -> Any:
+        """Converteer externe adressen naar interne adressen."""
+        if hasattr(request, "address"):
+            if 40001 <= request.address <= 40004:
+                request.address -= 40001  # 40001 → 0, 40002 → 1, etc.
+        return request
+
+
 class ModbusServer:
     """Modbus TCP server for SmartMeter Emulator."""
 
@@ -52,7 +67,7 @@ class ModbusServer:
         self.hass = hass
         self.config_entry = config_entry
         self.host = config_entry.data.get(CONF_HOST, "0.0.0.0")
-        self.port = config_entry.data.get(CONF_PORT, 5020)
+        self.port = config_entry.data.get(CONF_PORT, 502)
         self.slave_id = config_entry.data.get(CONF_SLAVE, 1)
         self.debug_logging = config_entry.data.get("debug_logging", True)
 
@@ -64,8 +79,7 @@ class ModbusServer:
             _LOGGER.setLevel(logging.INFO)
 
         self.register_map: dict[int, RegisterMapping] = {}
-        self.sim_data = None
-        self.device = None
+        self.context = None
         self.server = None
         self.running = False
 
@@ -112,56 +126,46 @@ class ModbusServer:
         self.setup_registers()
         _LOGGER.debug("Registers setup complete")
 
-        # Maak SimData met 4 holding registers (0-3)
-        # Gebruik de juiste syntax voor de pymodbus API
-        # values=0 werkt als scalar, maar niet als datatype=INVALID
-        self.sim_data = SimData(address=0, count=4)
-        _LOGGER.debug("Created SimData with 4 holding registers")
-
-        # Probeer SimDevice initialisatie (nieuwe API)
-        try:
-            self.device = SimDevice(id=self.slave_id, simdata=[self.sim_data])
-            _LOGGER.debug("Created SimDevice with slave ID %d", self.slave_id)
-        except TypeError as simdevice_err:
-            _LOGGER.warning("SimDevice initialisatie mislukt: %s (fallback naar ModbusSimulatorContext)", simdevice_err)
-            from pymodbus.datastore.simulator import ModbusSimulatorContext
-            config = {
-                "setup": {
-                    "co size": 0,
-                    "di size": 0,
-                    "ir size": 0,
-                    "hr size": 4,
-                    "shared blocks": False,
-                    "type exception": "none",
-                    "defaults": {
-                        "value": {
-                            "bits": 0,
-                            "uint16": 0,
-                            "uint32": 0,
-                            "float32": 0,
-                            "string": "",
-                        },
-                        "action": {
-                            "bits": None,
-                            "uint16": None,
-                            "uint32": None,
-                            "float32": None,
-                            "string": None,
-                        }
+        # Maak een ModbusSimulatorContext met 4 registers (40001-40004)
+        from pymodbus.datastore.simulator import ModbusSimulatorContext
+        config = {
+            "setup": {
+                "co size": 0,
+                "di size": 0,
+                "ir size": 0,
+                "hr size": 4,
+                "shared blocks": False,
+                "type exception": "none",
+                "defaults": {
+                    "value": {
+                        "bits": 0,
+                        "uint16": 0,
+                        "uint32": 0,
+                        "float32": 0,
+                        "string": "",
+                    },
+                    "action": {
+                        "bits": None,
+                        "uint16": None,
+                        "uint32": None,
+                        "float32": None,
+                        "string": None,
                     }
-                },
-                "invalid": [],
-                "write": [],
-                "repeat": [],
-                "bits": [],
-                "uint16": [{"addr": [0, 3], "value": [0, 2300, 100, 5000]}],
-                "uint32": [],
-                "float32": [],
-                "string": [],
-            }
-            self.context = ModbusSimulatorContext(config, custom_actions={})
-            _LOGGER.warning("Gebruik van deprecated ModbusSimulatorContext (fallback)")
-        _LOGGER.debug("Configured ModbusDeviceIdentification")
+                }
+            },
+            "invalid": [],
+            "write": [],
+            "repeat": [],
+            "bits": [],
+            "uint16": [{"addr": [0, 3], "value": [0, 2300, 100, 5000]}],
+            "uint32": [],
+            "float32": [],
+            "string": [],
+        }
+        self.context = ModbusSimulatorContext(config, custom_actions={})
+        _LOGGER.debug("Created ModbusSimulatorContext with 4 holding registers")
+
+        # Maak ModbusDeviceIdentification
         identity = ModbusDeviceIdentification()
         identity.VendorName = "SmartMeter Emulator"
         identity.ProductCode = "SM-EMUL-001"
@@ -175,7 +179,8 @@ class ModbusServer:
         _LOGGER.debug("Starting Modbus server on %s:%d", self.host, self.port)
         try:
             self.server = await StartAsyncTcpServer(
-                context=self.device,
+                context=self.context,
+                identity=identity,
                 address=(self.host, self.port),
             )
             _LOGGER.info(
@@ -216,19 +221,14 @@ class ModbusServer:
 
         self.register_map[address].value = value
 
-        # Update de SimData (interne adres: address - 40001)
-        if self.sim_data:
+        # Update de Modbus-context (interne adres: address - 40001)
+        if self.context:
             internal_address = address - 40001
-            # Update de Modbus-context (als beschikbaar)
-            if self.context:
-                internal_address = address - 40001
-                try:
-                    if hasattr(self.context, "async_OLD_setValues"):
-                        await self.context.async_OLD_setValues(3, internal_address, [value])
-                    else:
-                        # Probeer standaard setValues (voor nieuwe API)
-                        self.context.setValues(3, internal_address, [value])
-                except AttributeError:
+            try:
+                # Gebruik async_OLD_setValues voor deprecated API
+                if hasattr(self.context, "async_OLD_setValues"):
+                    await self.context.async_OLD_setValues(3, internal_address, [value])
+                else:
                     _LOGGER.warning("Geen ondersteunde setValues methode in context")
                 _LOGGER.debug(
                     "Register update: %d = %d (internal address: %d)",
@@ -236,12 +236,9 @@ class ModbusServer:
                     value,
                     internal_address,
                 )
-            _LOGGER.debug(
-                "Register update: %d = %d (internal address: %d)",
-                address,
-                value,
-                internal_address,
-            )
+            except Exception as err:
+                _LOGGER.warning("Failed to update register: %s", err)
+                return False
 
         return True
 
@@ -276,17 +273,24 @@ class ModbusServer:
             # Update de register map
             self.register_map[address].value = register_value
 
-            # Update de SimData
-            if self.sim_data:
+            # Update de Modbus-context
+            if self.context:
                 internal_address = address - 40001
-                self.sim_data.setValues(internal_address, [register_value])
-                _LOGGER.debug(
-                    "Register update: %d = %d (sensor: %s, raw: %f)",
-                    address,
-                    register_value,
-                    mapping.sensor_entity_id,
-                    sensor_value,
-                )
+                try:
+                    if hasattr(self.context, "async_OLD_setValues"):
+                        await self.context.async_OLD_setValues(3, internal_address, [register_value])
+                    else:
+                        _LOGGER.warning("Geen ondersteunde setValues methode in context")
+                    _LOGGER.debug(
+                        "Register update: %d = %d (sensor: %s, raw: %f)",
+                        address,
+                        register_value,
+                        mapping.sensor_entity_id,
+                        sensor_value,
+                    )
+                except Exception as err:
+                    _LOGGER.warning("Failed to update register: %s", err)
+                    return False
 
             return True
         except (ValueError, TypeError) as err:

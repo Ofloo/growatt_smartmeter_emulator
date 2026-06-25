@@ -4,7 +4,6 @@ from __future__ import annotations
 import logging
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.event import async_track_state_change_event
-from homeassistant.helpers.debounce import Debouncer
 from homeassistant.config_entries import ConfigEntry
 
 from .modbus_server import ModbusServer
@@ -31,13 +30,6 @@ class SmartMeterEmulatorCoordinator:
             40003: config_entry.data.get("current_sensor"),
             40004: config_entry.data.get("frequency_sensor"),
         }
-        self.debouncer = Debouncer(
-            hass,
-            _LOGGER,
-            cooldown=0.1,
-            immediate=True,
-            function=self._handle_sensor_update,
-        )
 
     async def async_setup_listeners(self) -> None:
         """Setup listeners for sensor state changes."""
@@ -45,7 +37,7 @@ class SmartMeterEmulatorCoordinator:
         async_track_state_change_event(
             self.hass,
             registered_sensors,
-            self.debouncer.async_call,
+            self._handle_sensor_update,
         )
         _LOGGER.debug("Sensor listeners registered")
 
