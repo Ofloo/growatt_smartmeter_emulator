@@ -19,7 +19,7 @@ from homeassistant.const import (
 try:
     from pymodbus.server import StartAsyncTcpServer
     from pymodbus import ModbusDeviceIdentification
-    from pymodbus.datastore.context import ModbusSlaveContext, ModbusServerContext, ModbusSequentialDataBlock
+    from pymodbus.datastore.context import ModbusDeviceContext, ModbusServerContext, ModbusSequentialDataBlock
 except ImportError as err:
     _LOGGER = logging.getLogger(__name__)
     _LOGGER.error("Failed to import pymodbus: %s", err)
@@ -127,9 +127,8 @@ class ModbusServer:
         _LOGGER.debug("Registers setup complete")
 
         hr_values = [0, 2300, 100, 5000]
-        hr_block = ModbusSequentialDataBlock(0, hr_values)
-        slave = ModbusSlaveContext(hr=hr_block)
-        self.context = ModbusServerContext(slaves=slave, single=True)
+        hr_block = ModbusSequentialDataBlock(1, hr_values)
+        self.context = ModbusDeviceContext(hr=hr_block)
         _LOGGER.debug("Created ModbusServerContext with 4 holding registers")
 
         identity = ModbusDeviceIdentification()
