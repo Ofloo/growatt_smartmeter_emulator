@@ -1,12 +1,17 @@
 """Modbus server for SmartMeter Emulator.
 
-Uses pymodbus modern async API with ModbusSimulatorContext.
+Uses pymodbus v3.5.4 from local lib/ directory.
 """
 from __future__ import annotations
 
 import logging
+import os
+import sys
 from dataclasses import dataclass
 from typing import Any
+
+# Voeg de lokale pymodbus v3.5.4 toe aan sys.path voor prioriteit
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "lib"))
 
 from homeassistant.core import HomeAssistant
 from homeassistant.config_entries import ConfigEntry
@@ -23,7 +28,7 @@ try:
     ModbusSimulatorContext = simulator.ModbusSimulatorContext
 except ImportError as err:
     _LOGGER = logging.getLogger(__name__)
-    _LOGGER.error("Failed to import pymodbus: %s", err)
+    _LOGGER.error("Failed to import local pymodbus: %s", err)
     raise
 
 _LOGGER = logging.getLogger(__name__)
@@ -153,7 +158,6 @@ class ModbusServer:
         self.context = ModbusSimulatorContext(config, custom_actions={})
         _LOGGER.debug("Created ModbusSimulatorContext with 4 holding registers")
 
-        # Initialiseer registers met startwaarden
         for i, value in enumerate(hr_values):
             if hasattr(self.context, 'registers') and i < len(self.context.registers):
                 self.context.registers[i].value = value
@@ -215,7 +219,6 @@ class ModbusServer:
         if self.context:
             internal_address = address - 40001
             try:
-                # Gebruik directe toegang tot registers voor ModbusSimulatorContext
                 if hasattr(self.context, 'registers') and internal_address < len(self.context.registers):
                     self.context.registers[internal_address].value = value
                 _LOGGER.debug("Register update: %d = %d (internal address: %d)", address, value, internal_address)

@@ -22,7 +22,7 @@ __all__ = [
     "StartUdpServer",
 ]
 
-from pymodbus.server.async_io import (
+from .async_io import (
     ModbusSerialServer,
     ModbusTcpServer,
     ModbusTlsServer,

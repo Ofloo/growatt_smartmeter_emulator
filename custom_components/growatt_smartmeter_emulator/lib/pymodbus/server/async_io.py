@@ -8,7 +8,7 @@ from contextlib import suppress
 from typing import Union
 
 from pymodbus.datastore import ModbusServerContext
-from pymodbus.device import ModbusControlBlock, ModbusDeviceIdentification
+from ..device import ModbusControlBlock, ModbusDeviceIdentification
 from pymodbus.exceptions import NoSuchSlaveException
 from pymodbus.factory import ServerDecoder
 from pymodbus.framer import ModbusFramer
