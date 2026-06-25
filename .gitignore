@@ -23,3 +23,4 @@ htmlcov/
 # OS
 .DS_Store
 Thumbs.db
+custom_components/growatt_smartmeter_emulator/lib/pymodbus/__pycache__/
