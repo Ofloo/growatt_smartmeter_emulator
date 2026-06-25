@@ -31,6 +31,13 @@ class SmartMeterEmulatorCoordinator:
             40003: config_entry.data.get("current_sensor"),
             40004: config_entry.data.get("frequency_sensor"),
         }
+        self.debouncer = Debouncer(
+            hass,
+            _LOGGER,
+            cooldown=0.1,
+            immediate=True,
+            function=self._handle_sensor_update,
+        )
 
     async def async_setup_listeners(self) -> None:
         """Setup listeners for sensor state changes."""
@@ -38,7 +45,7 @@ class SmartMeterEmulatorCoordinator:
         async_track_state_change_event(
             self.hass,
             registered_sensors,
-            self._handle_sensor_update,
+            self.debouncer.async_call,
         )
         _LOGGER.debug("Sensor listeners registered")
 
