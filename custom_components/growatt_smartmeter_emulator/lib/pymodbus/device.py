@@ -18,7 +18,7 @@ from collections import OrderedDict
 from typing import List
 
 from pymodbus.constants import INTERNAL_ERROR, DeviceInformation
-from .events import ModbusEvent
+from pymodbus.events import ModbusEvent
 from pymodbus.utilities import dict_property
 
 
