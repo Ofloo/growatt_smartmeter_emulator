@@ -1,6 +1,7 @@
 """Modbus server for SmartMeter Emulator.
 
 Simple on-demand Modbus server that fetches sensor values directly when requested.
+Uses system-installed pymodbus library.
 """
 from __future__ import annotations
 
@@ -251,7 +252,7 @@ class ModbusServer:
         # Create on-demand Modbus context
         self.context = OnDemandModbusContext(self.hass, self.config_entry)
         server_context = ModbusServerContext(
-            slaves={self.slave_id: self.context}, single=True
+            devices={self.slave_id: self.context}
         )
 
         # Setup device identification
