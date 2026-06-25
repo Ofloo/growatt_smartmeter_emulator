@@ -19,16 +19,13 @@ from homeassistant.const import (
 try:
     from pymodbus.server import StartAsyncTcpServer
     from pymodbus import ModbusDeviceIdentification
-    from pymodbus.datastore.simulator import ModbusSimulatorContext
+    from pymodbus.datastore import ModbusSlaveContext, ModbusServerContext, ModbusSequentialDataBlock
 except ImportError as err:
     _LOGGER = logging.getLogger(__name__)
     _LOGGER.error("Failed to import pymodbus: %s", err)
     raise
 
 _LOGGER = logging.getLogger(__name__)
-
-# Globale variabelen voor registerwaarden (40001-40004: Power, Voltage, Current, Frequency)
-register_values = [0, 2300, 100, 5000]
 
 
 @dataclass
@@ -55,7 +52,7 @@ class CustomRequestHandler:
         """Converteer externe adressen naar interne adressen."""
         if hasattr(request, "address"):
             if 40001 <= request.address <= 40004:
-                request.address -= 40001  # 40001 → 0, 40002 → 1, etc.
+                request.address -= 40001
         return request
 
 
@@ -75,7 +72,6 @@ class ModbusServer:
         self.slave_id = config_entry.data.get(CONF_SLAVE, 1)
         self.debug_logging = config_entry.data.get("debug_logging", True)
 
-        # Configureer logging
         if self.debug_logging:
             _LOGGER.setLevel(logging.DEBUG)
             _LOGGER.debug("Debug logging enabled for Modbus server")
@@ -130,51 +126,12 @@ class ModbusServer:
         self.setup_registers()
         _LOGGER.debug("Registers setup complete")
 
-        # Maak een ModbusSimulatorContext lege initialisatie
-        config = {
-            "setup": {
-                "co size": 0,
-                "di size": 0,
-                "ir size": 0,
-                "hr size": 4,
-                "shared blocks": False,
-                "type exception": "none",
-                "defaults": {
-                    "value": {
-                        "bits": 0,
-                        "uint16": 0,
-                        "uint32": 0,
-                        "float32": 0,
-                        "string": "",
-                    },
-                    "action": {
-                        "bits": None,
-                        "uint16": None,
-                        "uint32": None,
-                        "float32": None,
-                        "string": None,
-                    }
-                }
-            },
-            "invalid": [],
-            "write": [],
-            "repeat": [],
-            "bits": [],
-            "uint16": [],
-            "uint32": [],
-            "float32": [],
-            "string": [],
-        }
-        
-        self.context = ModbusSimulatorContext(config, custom_actions={})
-        _LOGGER.debug("Created ModbusSimulatorContext with 4 holding registers")
-        
-        # Volledig overschrijf de registers met initiele waarden
-        for i, value in enumerate(register_values):
-            self.context.registers[i].value = value
-            _LOGGER.debug("Initialized register %d with value %d", i, value)
+        hr_values = [0, 2300, 100, 5000]
+        hr_block = ModbusSequentialDataBlock(0, hr_values)
+        slave = ModbusSlaveContext(hr=hr_block)
+        self.context = ModbusServerContext(slaves=slave, single=True)
+        _LOGGER.debug("Created ModbusServerContext with 4 holding registers")
 
-        # Maak ModbusDeviceIdentification
         identity = ModbusDeviceIdentification()
         identity.VendorName = "SmartMeter Emulator"
         identity.ProductCode = "SM-EMUL-001"
@@ -184,7 +141,6 @@ class ModbusServer:
         identity.MajorMinor = "1.0.0"
         _LOGGER.debug("Configured ModbusDeviceIdentification")
 
-        # Start de Modbus-server
         _LOGGER.debug("Starting Modbus server on %s:%d", self.host, self.port)
         try:
             self.server = await StartAsyncTcpServer(
@@ -216,7 +172,6 @@ class ModbusServer:
         if address not in self.register_map:
             return False
 
-        # Validatie
         if self.register_map[address].signed:
             if value < -32768:
                 value = -32768
@@ -230,17 +185,11 @@ class ModbusServer:
 
         self.register_map[address].value = value
 
-        # Update de register waarden direct (gebruik globale variabele)
-        if self.context and address in self.register_map:
+        if self.context:
             internal_address = address - 40001
             try:
-                register_values[internal_address] = value
-                _LOGGER.debug(
-                    "Register update: %d = %d (internal address: %d)",
-                    address,
-                    value,
-                    internal_address,
-                )
+                self.context[0].setValues(3, internal_address, [value])
+                _LOGGER.debug("Register update: %d = %d (internal address: %d)", address, value, internal_address)
                 return True
             except Exception as err:
                 _LOGGER.error("Failed to update register: %s", err)
@@ -276,14 +225,12 @@ class ModbusServer:
                 elif register_value > 65535:
                     register_value = 65535
 
-            # Update de register map
             self.register_map[address].value = register_value
 
-            # Update de register waarden direct (gebruik globale variabele)
-            if self.context and address in self.register_map:
+            if self.context:
                 internal_address = address - 40001
                 try:
-                    register_values[internal_address] = register_value
+                    self.context[0].setValues(3, internal_address, [register_value])
                     _LOGGER.debug(
                         "Register update: %d = %d (sensor: %s, raw: %f)",
                         address,
