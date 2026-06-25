@@ -6,7 +6,7 @@
   "documentation": "https://github.com/Ofloo/growatt_smartmeter_emulator",
   "issue_tracker": "https://github.com/Ofloo/growatt_smartmeter_emulator/issues",
   "requirements": [
-    "pymodbus>=3.6.0"
+    "pymodbus==3.5.4"
   ],
   "dependencies": [],
   "codeowners": [
