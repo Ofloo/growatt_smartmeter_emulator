@@ -5,13 +5,8 @@ Uses pymodbus v3.5.4 from local lib/ directory.
 from __future__ import annotations
 
 import logging
-import os
-import sys
 from dataclasses import dataclass
 from typing import Any
-
-# Voeg de lokale pymodbus v3.5.4 toe aan sys.path voor prioriteit
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "lib"))
 
 from homeassistant.core import HomeAssistant
 from homeassistant.config_entries import ConfigEntry

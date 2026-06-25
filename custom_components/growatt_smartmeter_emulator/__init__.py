@@ -2,6 +2,11 @@
 from __future__ import annotations
 
 import logging
+import os
+import sys
+
+# Voeg de lokale pymodbus v3.5.4 toe aan sys.path VOORDAT andere imports worden uitgevoerd
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "lib"))
 
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
