@@ -17,9 +17,10 @@ from homeassistant.const import (
 )
 
 try:
-    from pymodbus.server import StartAsyncTcpServer
-    from pymodbus import ModbusDeviceIdentification
-    from pymodbus.datastore.context import ModbusSimulatorContext
+    from pymodbus.server.async_io import StartAsyncTcpServer
+    from pymodbus.device import ModbusDeviceIdentification
+    from pymodbus.datastore import simulator
+    ModbusSimulatorContext = simulator.ModbusSimulatorContext
 except ImportError as err:
     _LOGGER = logging.getLogger(__name__)
     _LOGGER.error("Failed to import pymodbus: %s", err)
