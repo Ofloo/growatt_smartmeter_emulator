@@ -1,6 +1,6 @@
 """Modbus server for SmartMeter Emulator.
 
-Uses pymodbus modern async API with ModbusDeviceContext.
+Uses pymodbus modern async API with ModbusSimulatorContext.
 """
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ from homeassistant.const import (
 try:
     from pymodbus.server import StartAsyncTcpServer
     from pymodbus import ModbusDeviceIdentification
-    from pymodbus.datastore.context import ModbusDeviceContext, ModbusServerContext, ModbusSequentialDataBlock
+    from pymodbus.datastore.context import ModbusSimulatorContext
 except ImportError as err:
     _LOGGER = logging.getLogger(__name__)
     _LOGGER.error("Failed to import pymodbus: %s", err)
@@ -127,9 +127,36 @@ class ModbusServer:
         _LOGGER.debug("Registers setup complete")
 
         hr_values = [0, 2300, 100, 5000]
-        hr_block = ModbusSequentialDataBlock(1, hr_values)
-        self.context = ModbusDeviceContext(hr=hr_block)
-        _LOGGER.debug("Created ModbusDeviceContext with 4 holding registers")
+        config = {
+            "setup": {
+                "co size": 0,
+                "di size": 0,
+                "ir size": 0,
+                "hr size": 4,
+                "shared blocks": False,
+                "type exception": "none",
+                "defaults": {
+                    "value": {"bits": 0, "uint16": 0, "uint32": 0, "float32": 0, "string": ""},
+                    "action": {"bits": None, "uint16": None, "uint32": None, "float32": None, "string": None}
+                }
+            },
+            "invalid": [],
+            "write": [],
+            "repeat": [],
+            "bits": [],
+            "uint16": [],
+            "uint32": [],
+            "float32": [],
+            "string": [],
+        }
+        self.context = ModbusSimulatorContext(config, custom_actions={})
+        _LOGGER.debug("Created ModbusSimulatorContext with 4 holding registers")
+
+        # Initialiseer registers met startwaarden
+        for i, value in enumerate(hr_values):
+            if hasattr(self.context, 'registers') and i < len(self.context.registers):
+                self.context.registers[i].value = value
+                _LOGGER.debug("Initialized register %d with value %d", i, value)
 
         identity = ModbusDeviceIdentification()
         identity.VendorName = "SmartMeter Emulator"
@@ -187,7 +214,9 @@ class ModbusServer:
         if self.context:
             internal_address = address - 40001
             try:
-                self.context[0].setValues(3, internal_address, [value])
+                # Gebruik directe toegang tot registers voor ModbusSimulatorContext
+                if hasattr(self.context, 'registers') and internal_address < len(self.context.registers):
+                    self.context.registers[internal_address].value = value
                 _LOGGER.debug("Register update: %d = %d (internal address: %d)", address, value, internal_address)
                 return True
             except Exception as err:
@@ -229,7 +258,8 @@ class ModbusServer:
             if self.context:
                 internal_address = address - 40001
                 try:
-                    self.context[0].setValues(3, internal_address, [register_value])
+                    if hasattr(self.context, 'registers') and internal_address < len(self.context.registers):
+                        self.context.registers[internal_address].value = register_value
                     _LOGGER.debug(
                         "Register update: %d = %d (sensor: %s, raw: %f)",
                         address,
