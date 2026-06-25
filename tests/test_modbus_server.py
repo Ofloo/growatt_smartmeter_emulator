@@ -103,7 +103,8 @@ def test_modbus_server_get_register():
         assert value is None
 
 
-def test_modbus_server_update_register_from_sensor():
+@pytest.mark.asyncio
+async def test_modbus_server_update_register_from_sensor():
     """Test updating register from sensor."""
     with patch("custom_components.growatt_smartmeter_emulator.modbus_server._LOGGER"):
         hass = MagicMock()
@@ -123,12 +124,13 @@ def test_modbus_server_update_register_from_sensor():
         state.state = "1500"
         hass.states.get.return_value = state
 
-        result = server.update_register_from_sensor(40001)
+        result = await server.update_register_from_sensor(40001)
         assert result is True
         assert server.register_map[40001].value == 1500
 
 
-def test_modbus_server_update_register_from_sensor_unavailable():
+@pytest.mark.asyncio
+async def test_modbus_server_update_register_from_sensor_unavailable():
     """Test updating register with unavailable sensor."""
     with patch("custom_components.growatt_smartmeter_emulator.modbus_server._LOGGER"):
         hass = MagicMock()
@@ -148,12 +150,13 @@ def test_modbus_server_update_register_from_sensor_unavailable():
         state.state = "unavailable"
         hass.states.get.return_value = state
 
-        result = server.update_register_from_sensor(40001)
+        result = await server.update_register_from_sensor(40001)
         assert result is False
         assert server.register_map[40001].value == 0
 
 
-def test_modbus_server_bounds_checking():
+@pytest.mark.asyncio
+async def test_modbus_server_bounds_checking():
     """Test bounds checking."""
     with patch("custom_components.growatt_smartmeter_emulator.modbus_server._LOGGER"):
         hass = MagicMock()
@@ -173,12 +176,12 @@ def test_modbus_server_bounds_checking():
         state.state = "100000"
         hass.states.get.return_value = state
 
-        result = server.update_register_from_sensor(40001)
+        result = await server.update_register_from_sensor(40001)
         assert result is True
         assert server.register_map[40001].value == 32767
 
         state.state = "-100000"
-        result = server.update_register_from_sensor(40001)
+        result = await server.update_register_from_sensor(40001)
         assert result is True
         assert server.register_map[40001].value == -32768
 

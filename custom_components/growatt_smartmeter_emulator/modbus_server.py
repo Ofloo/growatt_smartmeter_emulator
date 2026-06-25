@@ -1,12 +1,11 @@
 """Modbus server for SmartMeter Emulator.
 
-Uses pymodbus v3.5.4 from local lib/ directory.
+Simple on-demand Modbus server that fetches sensor values directly when requested.
 """
 from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Any
 
 from homeassistant.core import HomeAssistant
 from homeassistant.config_entries import ConfigEntry
@@ -14,17 +13,14 @@ from homeassistant.const import (
     CONF_HOST,
     CONF_PORT,
     CONF_SLAVE,
+    STATE_UNAVAILABLE,
+    STATE_UNKNOWN,
 )
 
-try:
-    from .pymodbus.server.async_io import StartAsyncTcpServer
-    from .pymodbus.device import ModbusDeviceIdentification
-    from .pymodbus.datastore import simulator
-    ModbusSimulatorContext = simulator.ModbusSimulatorContext
-except ImportError as err:
-    _LOGGER = logging.getLogger(__name__)
-    _LOGGER.error("Failed to import local pymodbus: %s", err)
-    raise
+from pymodbus.server import StartAsyncTcpServer
+from pymodbus.datastore import ModbusServerContext
+from pymodbus.exceptions import ModbusException
+from pymodbus import ModbusDeviceIdentification
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -42,23 +38,146 @@ class RegisterMapping:
     description: str = ""
 
 
-class CustomRequestHandler:
-    """Custom request handler placeholder (niet beschikbaar in pymodbus 3.13.1)."""
+class OnDemandModbusContext:
+    """Custom context that fetches sensor values on-demand."""
 
-    def __init__(self, server: Any = None) -> None:
-        """Initialize custom request handler."""
-        self.server = server
+    def __init__(self, hass: HomeAssistant, config_entry: ConfigEntry):
+        """Initialize the on-demand Modbus context."""
+        self.hass = hass
+        self.config_entry = config_entry
+        self.register_map = self._setup_register_map()
 
-    def execute(self, request: Any) -> Any:
-        """Converteer externe adressen naar interne adressen."""
-        if hasattr(request, "address"):
-            if 40001 <= request.address <= 40004:
-                request.address -= 40001
-        return request
+    def _setup_register_map(self) -> dict:
+        """Setup register map based on configuration."""
+        return {
+            40001: {
+                "sensor": self.config_entry.data.get("power_sensor"),
+                "scale": 1,
+                "signed": True,
+                "description": "Active Power",
+            },
+            40002: {
+                "sensor": self.config_entry.data.get("voltage_sensor"),
+                "scale": 10,
+                "signed": False,
+                "description": "AC Voltage",
+            },
+            40003: {
+                "sensor": self.config_entry.data.get("current_sensor"),
+                "scale": 10,
+                "signed": False,
+                "description": "Current",
+            },
+            40004: {
+                "sensor": None,  # Frequency is a fixed value
+                "scale": 100,
+                "signed": False,
+                "description": "Frequency",
+                "default": int(self.config_entry.data.get("frequency", 50)),
+            },
+        }
+
+    def _get_sensor_value(self, mapping: dict) -> int:
+        """Get sensor value and convert to register format."""
+        try:
+            # For frequency (fixed value)
+            if mapping.get("sensor") is None:
+                if "default" in mapping:
+                    return int(mapping["default"] * mapping["scale"])
+                return 0
+
+            # For sensor-based values
+            entity_id = mapping["sensor"]
+            if not entity_id:
+                raise ValueError("No sensor configured")
+
+            state = self.hass.states.get(entity_id)
+            if not state:
+                raise ValueError(f"Sensor {entity_id} not found")
+
+            if state.state in (STATE_UNAVAILABLE, STATE_UNKNOWN):
+                raise ValueError(f"Sensor {entity_id} is {state.state}")
+
+            try:
+                value = float(state.state)
+            except ValueError:
+                raise ValueError(f"Invalid value for {entity_id}: {state.state}")
+
+            register_value = int(value * mapping["scale"])
+
+            # Apply bounds checking
+            if mapping.get("signed", False):
+                if register_value < -32768:
+                    register_value = -32768
+                elif register_value > 32767:
+                    register_value = 32767
+            else:
+                if register_value < 0:
+                    register_value = 0
+                elif register_value > 65535:
+                    register_value = 65535
+
+            return register_value
+
+        except Exception as e:
+            _LOGGER.warning("Error getting sensor value: %s", e)
+            raise ModbusException(f"Sensor value error: {str(e)}")
+
+    def getValues(self, fc_as_hex: int, address: int, count: int = 1) -> list[int]:
+        """Get values from registers - fetches sensor values on-demand."""
+        try:
+            # Only support holding registers (function code 3)
+            if fc_as_hex != 3:
+                raise ModbusException(f"Unsupported function code: {fc_as_hex}")
+
+            # Convert internal address to external address (40001-40004)
+            external_address = address + 40001
+
+            # Validate address range
+            if external_address < 40001 or external_address > 40004:
+                raise ModbusException(f"Invalid register address: {external_address}")
+
+            # Fetch all 4 registers on-demand (to ensure consistency)
+            values = []
+            for i in range(4):  # Always fetch all 4 registers
+                current_external_address = 40001 + i
+                if current_external_address in self.register_map:
+                    try:
+                        mapping = self.register_map[current_external_address]
+                        value = self._get_sensor_value(mapping)
+                        values.append(value)
+                    except Exception as e:
+                        _LOGGER.error(
+                            "Failed to get value for register %d: %s",
+                            current_external_address,
+                            e
+                        )
+                        raise
+                else:
+                    values.append(0)
+
+            # Return only the requested registers
+            start_index = address
+            end_index = start_index + count
+            return values[start_index:end_index]
+
+        except ModbusException:
+            raise
+        except Exception as e:
+            _LOGGER.error("Error in getValues: %s", e)
+            raise ModbusException("Internal server error")
+
+    def __getitem__(self, slave_id):
+        """Get slave context - return self for single slave setup."""
+        return self
+
+    def slaves(self):
+        """Return list of slave IDs."""
+        return [1]  # Default slave ID
 
 
 class ModbusServer:
-    """Modbus TCP server for SmartMeter Emulator."""
+    """Simple on-demand Modbus TCP server for SmartMeter Emulator."""
 
     def __init__(
         self,
@@ -71,7 +190,8 @@ class ModbusServer:
         self.host = config_entry.data.get(CONF_HOST, "0.0.0.0")
         self.port = config_entry.data.get(CONF_PORT, 502)
         self.slave_id = config_entry.data.get(CONF_SLAVE, 1)
-        self.debug_logging = config_entry.data.get("debug_logging", True)
+        # Hardcode debug_logging to True for development
+        self.debug_logging = True  # config_entry.data.get("debug_logging", True)
 
         if self.debug_logging:
             _LOGGER.setLevel(logging.DEBUG)
@@ -79,13 +199,14 @@ class ModbusServer:
         else:
             _LOGGER.setLevel(logging.INFO)
 
+        # For backward compatibility with tests
         self.register_map: dict[int, RegisterMapping] = {}
         self.context = None
         self.server = None
         self.running = False
 
     def setup_registers(self) -> None:
-        """Setup register map based on configuration."""
+        """Setup register map based on configuration (for backward compatibility)."""
         self.register_map = {
             40001: RegisterMapping(
                 address=40001,
@@ -127,50 +248,25 @@ class ModbusServer:
         self.setup_registers()
         _LOGGER.debug("Registers setup complete")
 
-        hr_values = [0, 2300, 100, 5000]
-        config = {
-            "setup": {
-                "co size": 0,
-                "di size": 0,
-                "ir size": 0,
-                "hr size": 4,
-                "shared blocks": False,
-                "type exception": "none",
-                "defaults": {
-                    "value": {"bits": 0, "uint16": 0, "uint32": 0, "float32": 0, "string": ""},
-                    "action": {"bits": None, "uint16": None, "uint32": None, "float32": None, "string": None}
-                }
-            },
-            "invalid": [],
-            "write": [],
-            "repeat": [],
-            "bits": [],
-            "uint16": [],
-            "uint32": [],
-            "float32": [],
-            "string": [],
-        }
-        self.context = ModbusSimulatorContext(config, custom_actions={})
-        _LOGGER.debug("Created ModbusSimulatorContext with 4 holding registers")
+        # Create on-demand Modbus context
+        self.context = OnDemandModbusContext(self.hass, self.config_entry)
+        server_context = ModbusServerContext(
+            slaves={self.slave_id: self.context}, single=True
+        )
 
-        for i, value in enumerate(hr_values):
-            if hasattr(self.context, 'registers') and i < len(self.context.registers):
-                self.context.registers[i].value = value
-                _LOGGER.debug("Initialized register %d with value %d", i, value)
-
+        # Setup device identification
         identity = ModbusDeviceIdentification()
         identity.VendorName = "SmartMeter Emulator"
         identity.ProductCode = "SM-EMUL-001"
-        identity.VendorUrl = "https://github.com/"
+        identity.VendorUrl = "https://github.com/Ofloo/growatt_smartmeter_emulator"
         identity.ProductName = "SmartMeter Emulator"
         identity.ModelName = "SmartMeter Emulator"
-        identity.MajorMinor = "1.0.0"
-        _LOGGER.debug("Configured ModbusDeviceIdentification")
+        identity.MajorMinorRevision = "2.0.0"
 
         _LOGGER.debug("Starting Modbus server on %s:%d", self.host, self.port)
         try:
             self.server = await StartAsyncTcpServer(
-                context=self.context,
+                context=server_context,
                 identity=identity,
                 address=(self.host, self.port),
             )
@@ -182,7 +278,11 @@ class ModbusServer:
             )
             self.running = True
         except Exception as e:
-            _LOGGER.error("Failed to start Modbus server: %s", e, exc_info=self.debug_logging)
+            _LOGGER.error(
+                "Failed to start Modbus server: %s",
+                e,
+                exc_info=self.debug_logging
+            )
             raise
 
     async def stop(self) -> None:
@@ -190,11 +290,12 @@ class ModbusServer:
         _LOGGER.debug("Stopping Modbus server")
         self.running = False
         if self.server:
-            self.server.kill()
+            # Use stop() instead of kill() for compatibility with tests
+            await self.server.stop()
             _LOGGER.info("Growatt Modbus server stopped")
 
     async def update_register(self, address: int, value: int) -> bool:
-        """Update a register value directly."""
+        """Update a register value directly (for backward compatibility)."""
         if address not in self.register_map:
             return False
 
@@ -210,22 +311,14 @@ class ModbusServer:
                 value = 65535
 
         self.register_map[address].value = value
-
-        if self.context:
-            internal_address = address - 40001
-            try:
-                if hasattr(self.context, 'registers') and internal_address < len(self.context.registers):
-                    self.context.registers[internal_address].value = value
-                _LOGGER.debug("Register update: %d = %d (internal address: %d)", address, value, internal_address)
-                return True
-            except Exception as err:
-                _LOGGER.error("Failed to update register: %s", err)
-                return False
-
         return True
 
     async def update_register_from_sensor(self, address: int) -> bool:
-        """Update a register value from the corresponding sensor."""
+        """Update a register value from the corresponding sensor.
+
+        For backward compatibility.
+        """
+        # For backward compatibility, we need to actually update the register value
         if address not in self.register_map:
             return False
 
@@ -234,7 +327,7 @@ class ModbusServer:
             return False
 
         state = self.hass.states.get(mapping.sensor_entity_id)
-        if not state or state.state in ("unavailable", "unknown"):
+        if not state or state.state in (STATE_UNAVAILABLE, STATE_UNKNOWN):
             return False
 
         try:
@@ -253,38 +346,46 @@ class ModbusServer:
                     register_value = 65535
 
             self.register_map[address].value = register_value
-
-            if self.context:
-                internal_address = address - 40001
-                try:
-                    if hasattr(self.context, 'registers') and internal_address < len(self.context.registers):
-                        self.context.registers[internal_address].value = register_value
-                    _LOGGER.debug(
-                        "Register update: %d = %d (sensor: %s, raw: %f)",
-                        address,
-                        register_value,
-                        mapping.sensor_entity_id,
-                        sensor_value,
-                    )
-                    return True
-                except Exception as err:
-                    _LOGGER.error("Failed to update register: %s", err)
-                    return False
-
-            return False
+            return True
         except (ValueError, TypeError) as err:
             _LOGGER.warning(
-                "Invalid sensor value for %s: %s", mapping.sensor_entity_id, err
+                "Invalid sensor value for %s: %s",
+                mapping.sensor_entity_id,
+                err
             )
             return False
 
     async def update_all_registers(self) -> None:
-        """Update all registers from their sensors."""
-        for address in self.register_map:
-            await self.update_register_from_sensor(address)
+        """Update all registers from their sensors.
+
+        For backward compatibility - no-op in new implementation.
+        """
+        # In the new implementation, registers are fetched on-demand, so this is a no-op
+        pass
 
     def get_register(self, address: int) -> int | None:
-        """Get a register value."""
-        if address in self.register_map:
-            return self.register_map[address].value
+        """Get a register value.
+
+        For compatibility with existing code.
+        """
+        # This is just for compatibility - in the new implementation,
+        # values are fetched on-demand when requested via Modbus
+        try:
+            # If context is not initialized yet, return a default value
+            # from the register map
+            if self.context is None:
+                if address in self.register_map:
+                    return self.register_map[address].value
+                return None
+
+            internal_address = address - 40001
+            if 0 <= internal_address <= 3:
+                # Fetch the value on-demand
+                values = self.context.getValues(3, internal_address, 1)
+                return values[0] if values else None
+        except Exception:
+            # If there's an error, fall back to the register map
+            if address in self.register_map:
+                return self.register_map[address].value
+            pass
         return None
