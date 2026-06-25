@@ -1,7 +1,7 @@
 """Modbus server for SmartMeter Emulator.
 
 Simple on-demand Modbus server that fetches sensor values directly when requested.
-Uses system-installed pymodbus library.
+Designed for compatibility with Home Assistant's pymodbus version.
 """
 from __future__ import annotations
 
@@ -251,8 +251,11 @@ class ModbusServer:
 
         # Create on-demand Modbus context
         self.context = OnDemandModbusContext(self.hass, self.config_entry)
+        
+        # For now, always use the old API (slaves parameter) to ensure compatibility
+        # with Home Assistant's pymodbus version
         server_context = ModbusServerContext(
-            devices={self.slave_id: self.context}
+            slaves={self.slave_id: self.context}, single=True
         )
 
         # Setup device identification
