@@ -72,7 +72,7 @@ class OnDemandModbusContext(ModbusSimulatorContext):
     def __init__(self, hass: HomeAssistant, config_entry: ConfigEntry):
         """Initialize the on-demand Modbus context."""
         # Initialize the base class with minimal configuration
-        super().__init__({})
+        super().__init__({}, None)
         self.hass = hass
         self.config_entry = config_entry
         self.register_map = self._setup_register_map()
