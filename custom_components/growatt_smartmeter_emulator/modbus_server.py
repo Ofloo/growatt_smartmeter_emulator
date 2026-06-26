@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import socket
 from dataclasses import dataclass
 
 import pymodbus
@@ -488,53 +489,82 @@ class ModbusServer:
             )
             raise
 
-    async def _verify_server(self) -> bool:
-        """Verify the server is running and accessible."""
-        try:
-            import socket
+    async def _verify_server(
+        self,
+        max_retries: int = 3,
+        retry_delay: float = 0.5
+    ) -> bool:
+        """Verify the server is running and accessible with retry logic."""
+        for attempt in range(max_retries):
+            try:
+                _LOGGER.debug(
+                    "Verifying server on %s:%s (attempt %s/%s)",
+                    self.host, self.port, attempt + 1, max_retries
+                )
 
-            _LOGGER.debug("Verifying server on %s:%s", self.host, self.port)
+                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                    s.settimeout(1)
+                    result = s.connect_ex((self.host, self.port))
 
-            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                s.settimeout(1)
-                result = s.connect_ex((self.host, self.port))
+                    if result == 0:
+                        _LOGGER.debug("Server verification successful")
+                        return True
+                    else:
+                        _LOGGER.warning(
+                            "Server not listening on %s:%s (error: %s)",
+                            self.host, self.port, result
+                        )
+                        if attempt < max_retries - 1:
+                            await asyncio.sleep(retry_delay)
 
-                if result == 0:
-                    _LOGGER.debug("Server verification successful")
-                    return True
-                else:
-                    _LOGGER.error(
-                        "Server not listening on %s:%s (error: %s)",
-                        self.host, self.port, result
-                    )
-                    return False
+            except Exception as e:
+                _LOGGER.error("Server verification failed: %s", e)
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(retry_delay)
 
-        except Exception as e:
-            _LOGGER.error("Server verification failed: %s", e)
-            return False
+        _LOGGER.error("Server verification failed after %s attempts", max_retries)
+        return False
 
     async def _run_modbus_server(self, server_context, identity):
-        """Run the Modbus server in the background."""
-        try:
-            _LOGGER.info("Starting Modbus server on %s:%s", self.host, self.port)
+        """Run the Modbus server in the background with enhanced error handling."""
+        max_attempts = 3
 
-            # Add a small delay to ensure everything is initialized
-            await asyncio.sleep(0.1)
+        for attempt in range(max_attempts):
+            try:
+                _LOGGER.info(
+                    "Starting Modbus server on %s:%s (attempt %s/%s)",
+                    self.host, self.port, attempt + 1, max_attempts
+                )
 
-            self.server = await StartAsyncTcpServer(
-                context=server_context,
-                identity=identity,
-                address=(self.host, self.port),
-            )
+                # Add delay before starting to allow network initialization
+                await asyncio.sleep(0.1 * (attempt + 1))
 
-            _LOGGER.info("Modbus server running successfully")
+                self.server = await StartAsyncTcpServer(
+                    context=server_context,
+                    identity=identity,
+                    address=(self.host, self.port),
+                )
 
-        except asyncio.CancelledError:
-            _LOGGER.info("Modbus server task cancelled")
-            raise
-        except Exception as e:
-            _LOGGER.error("Modbus server error: %s", e, exc_info=True)
-            raise
+                _LOGGER.info("Modbus server running successfully")
+                return
+
+            except OSError as e:
+                if e.errno == 98:  # Address already in use
+                    _LOGGER.warning(
+                        "Port %s already in use, attempt %s/%s: %s",
+                        self.port, attempt + 1, max_attempts, e
+                    )
+                    if attempt < max_attempts - 1:
+                        await asyncio.sleep(1)
+                else:
+                    _LOGGER.error("Modbus server OSError: %s", e)
+                    raise
+            except Exception as e:
+                _LOGGER.error("Modbus server error: %s", e, exc_info=True)
+                raise
+
+        _LOGGER.error("Failed to start Modbus server after %s attempts", max_attempts)
+        raise RuntimeError(f"Failed to start Modbus server on {self.host}:{self.port}")
 
     async def stop(self) -> None:
         """Stop the Modbus server asynchronously."""
