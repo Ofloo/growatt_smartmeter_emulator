@@ -22,7 +22,8 @@ from homeassistant.const import (
 )
 
 from pymodbus import ModbusDeviceIdentification
-from pymodbus.datastore import ModbusServerContext
+from pymodbus.datastore import ModbusServerContext, ModbusSimulatorContext
+from pymodbus.datastore.context import ExcCodes
 from pymodbus.exceptions import ModbusException
 from pymodbus.server import StartAsyncTcpServer
 
@@ -51,8 +52,6 @@ def create_modbus_server_context(slave_id: int, context) -> ModbusServerContext:
 
 _LOGGER = logging.getLogger(__name__)
 
-_LOGGER = logging.getLogger(__name__)
-
 
 @dataclass
 class RegisterMapping:
@@ -67,11 +66,13 @@ class RegisterMapping:
     description: str = ""
 
 
-class OnDemandModbusContext:
+class OnDemandModbusContext(ModbusSimulatorContext):
     """Custom context that fetches sensor values on-demand."""
 
     def __init__(self, hass: HomeAssistant, config_entry: ConfigEntry):
         """Initialize the on-demand Modbus context."""
+        # Initialize the base class with minimal configuration
+        super().__init__({})
         self.hass = hass
         self.config_entry = config_entry
         self.register_map = self._setup_register_map()
@@ -151,6 +152,68 @@ class OnDemandModbusContext:
         except Exception as e:
             _LOGGER.warning("Error getting sensor value: %s", e)
             raise ModbusException(f"Sensor value error: {str(e)}")
+
+    async def async_OLD_getValues(
+        self,
+        func_code: int,
+        address: int,
+        count: int = 1
+    ) -> list[int] | list[bool] | ExcCodes:
+        """Get values from registers asynchronously.
+
+        Fetches sensor values on-demand.
+        """
+        try:
+            # Only support holding registers (function code 3)
+            if func_code != 3:
+                return ExcCodes.ILLEGAL_FUNCTION
+
+            # Convert internal address to external address (40001-40004)
+            external_address = address + 40001
+
+            # Validate address range
+            if external_address < 40001 or external_address > 40004:
+                return ExcCodes.ILLEGAL_ADDRESS
+
+            # Fetch all 4 registers on-demand (to ensure consistency)
+            values = []
+            for i in range(4):  # Always fetch all 4 registers
+                current_external_address = 40001 + i
+                if current_external_address in self.register_map:
+                    try:
+                        mapping = self.register_map[current_external_address]
+                        value = self._get_sensor_value(mapping)
+                        values.append(value)
+                    except Exception as e:
+                        _LOGGER.error(
+                            "Failed to get value for register %d: %s",
+                            current_external_address,
+                            e
+                        )
+                        return ExcCodes.SERVER_DEVICE_FAILURE
+                else:
+                    values.append(0)
+
+            # Return only the requested registers
+            start_index = address
+            end_index = start_index + count
+            return values[start_index:end_index]
+
+        except ModbusException:
+            return ExcCodes.SERVER_DEVICE_FAILURE
+        except Exception as e:
+            _LOGGER.error("Error in async_OLD_getValues: %s", e)
+            return ExcCodes.SERVER_DEVICE_FAILURE
+
+    async def async_OLD_setValues(
+        self,
+        func_code: int,
+        address: int,
+        values: list[int] | list[bool]
+    ) -> None | ExcCodes:
+        """Set values in registers (not supported in this implementation)."""
+        # This is a read-only implementation, so we just return success
+        return None
 
     def getValues(self, fc_as_hex: int, address: int, count: int = 1) -> list[int]:
         """Get values from registers - fetches sensor values on-demand."""
