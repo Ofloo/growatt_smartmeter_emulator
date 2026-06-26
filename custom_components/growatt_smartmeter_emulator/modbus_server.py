@@ -1,12 +1,15 @@
 """Modbus server for SmartMeter Emulator.
 
 Simple on-demand Modbus server that fetches sensor values directly when requested.
-Designed for compatibility with Home Assistant's pymodbus version.
+Designed for compatibility with multiple pymodbus versions.
 """
 from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+
+import pymodbus
+from packaging import version
 
 from homeassistant.core import HomeAssistant
 from homeassistant.config_entries import ConfigEntry
@@ -18,10 +21,35 @@ from homeassistant.const import (
     STATE_UNKNOWN,
 )
 
-from pymodbus.server import StartAsyncTcpServer
+from pymodbus import ModbusDeviceIdentification
 from pymodbus.datastore import ModbusServerContext
 from pymodbus.exceptions import ModbusException
-from pymodbus import ModbusDeviceIdentification
+from pymodbus.server import StartAsyncTcpServer
+
+# Detect pymodbus version and API compatibility
+PYMODBUS_VERSION = version.parse(pymodbus.__version__)
+NEW_API = PYMODBUS_VERSION >= version.parse("3.13.0")
+
+
+def create_modbus_server_context(slave_id: int, context) -> ModbusServerContext:
+    """Create a ModbusServerContext compatible with both old and new pymodbus APIs.
+
+    Args:
+        slave_id: The slave ID to use for the context
+        context: The Modbus context to wrap
+
+    Returns:
+        ModbusServerContext: A properly initialized server context
+    """
+    try:
+        # Try the new API first (pymodbus >= 3.13.0)
+        return ModbusServerContext(devices={slave_id: context})
+    except TypeError:
+        # Fallback to old API (pymodbus < 3.13.0)
+        return ModbusServerContext(slaves={slave_id: context}, single=True)
+
+
+_LOGGER = logging.getLogger(__name__)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -251,12 +279,9 @@ class ModbusServer:
 
         # Create on-demand Modbus context
         self.context = OnDemandModbusContext(self.hass, self.config_entry)
-        
-        # For now, always use the old API (slaves parameter) to ensure compatibility
-        # with Home Assistant's pymodbus version
-        server_context = ModbusServerContext(
-            slaves={self.slave_id: self.context}, single=True
-        )
+
+        # Create server context with version-agnostic API
+        server_context = create_modbus_server_context(self.slave_id, self.context)
 
         # Setup device identification
         identity = ModbusDeviceIdentification()
