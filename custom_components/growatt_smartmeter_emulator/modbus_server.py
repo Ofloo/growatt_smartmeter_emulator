@@ -189,18 +189,107 @@ class OnDemandModbusContext(ModbusSimulatorContext):
         This is the main async interface method that pymodbus calls.
         """
         _LOGGER.debug(
-            "async_getValues called: device_id=%s, func_code=%s, address=%s, count=%s",
+            "MODBUS REQUEST START: device_id=%s, func_code=%s, address=%s, count=%s",
             device_id, func_code, address, count
         )
 
         try:
-            # Delegate to our existing implementation
-            result = await self.async_OLD_getValues(func_code, address, count)
-            _LOGGER.debug("async_getValues returning: %s", result)
+            # Function code validation
+            _LOGGER.debug("Validating function code: %s", func_code)
+            if func_code != 3:
+                _LOGGER.warning("MODBUS ERROR: Unsupported function code %s", func_code)
+                return ExcCodes.ILLEGAL_FUNCTION
+
+            # Address validation
+            _LOGGER.debug("Validating address: %s", address)
+            # Convert internal address to external address (40001-40004)
+            external_address = address + 40001
+            if external_address < 40001 or external_address > 40004:
+                _LOGGER.warning(
+                    "MODBUS ERROR: Invalid register address: %s",
+                    external_address
+                )
+                return ExcCodes.ILLEGAL_ADDRESS
+
+            # Count validation
+            _LOGGER.debug("Validating count: %s", count)
+            if count < 1 or count > 4:
+                _LOGGER.warning("MODBUS ERROR: Invalid count %s", count)
+                return ExcCodes.ILLEGAL_VALUE
+
+            # Process request
+            _LOGGER.debug("Processing request...")
+            result = await self._process_request_with_logging(func_code, address, count)
+
+            _LOGGER.debug("MODBUS REQUEST COMPLETE: %s", result)
             return result
+
         except Exception as e:
-            _LOGGER.error("Error in async_getValues: %s", e, exc_info=True)
+            _LOGGER.error(
+                "MODBUS REQUEST ERROR: %s", e, exc_info=True
+            )
             return ExcCodes.SERVER_DEVICE_FAILURE
+
+    async def _process_request_with_logging(
+        self,
+        func_code: int,
+        address: int,
+        count: int
+    ):
+        """Process a Modbus request with detailed logging."""
+        _LOGGER.debug("Starting request processing...")
+
+        try:
+            # Convert address
+            external_address = address + 40001
+            _LOGGER.debug(
+                "Converted address: internal=%s -> external=%s",
+                address,
+                external_address
+            )
+
+            # Check register map
+            _LOGGER.debug("Register map contents: %s", list(self.register_map.keys()))
+            _LOGGER.debug("Register map size: %s", len(self.register_map))
+
+            # Fetch values
+            values = []
+            for i in range(4):
+                current_external = 40001 + i
+                _LOGGER.debug("Processing register: %s", current_external)
+
+                if current_external in self.register_map:
+                    try:
+                        mapping = self.register_map[current_external]
+                        _LOGGER.debug(
+                            "Found mapping for %s: %s",
+                            current_external,
+                            mapping
+                        )
+                        value = self._get_sensor_value(mapping)
+                        _LOGGER.debug("Register %s value: %s", current_external, value)
+                        values.append(value)
+                    except Exception as e:
+                        _LOGGER.error(
+                            "Error getting value for %s: %s",
+                            current_external,
+                            e
+                        )
+                        raise
+                else:
+                    _LOGGER.debug("Register %s not found in map", current_external)
+                    values.append(0)
+
+            # Return requested values
+            start = address
+            end = start + count
+            result = values[start:end]
+            _LOGGER.debug("Returning values from %s:%s: %s", start, end, result)
+            return result
+
+        except Exception as e:
+            _LOGGER.error("Error processing request: %s", e)
+            raise
 
     async def async_OLD_getValues(
         self,
@@ -406,12 +495,32 @@ class ModbusServer:
         # Create on-demand Modbus context
         _LOGGER.debug("Creating OnDemandModbusContext")
         self.context = OnDemandModbusContext(self.hass, self.config_entry)
-        _LOGGER.debug("OnDemandModbusContext created: %s", type(self.context))
+        _LOGGER.debug("Context created: %s", type(self.context))
+        _LOGGER.debug("Context register map: %s", self.context.register_map)
+        _LOGGER.debug("Context register map size: %s", len(self.context.register_map))
+
+        # Verify context methods
+        _LOGGER.debug(
+            "Context has async_getValues: %s",
+            hasattr(self.context, 'async_getValues')
+        )
+        _LOGGER.debug(
+            "Context has async_OLD_getValues: %s",
+            hasattr(self.context, 'async_OLD_getValues')
+        )
 
         # Create server context with version-agnostic API
         _LOGGER.debug("Creating ModbusServerContext with slave_id: %s", self.slave_id)
         server_context = create_modbus_server_context(self.slave_id, self.context)
         _LOGGER.debug("ModbusServerContext created: %s", type(server_context))
+        _LOGGER.debug(
+            "ModbusServerContext devices: %s",
+            getattr(
+                server_context,
+                '_devices',
+                getattr(server_context, '_slaves', 'Unknown')
+            )
+        )
 
         # Setup device identification
         identity = ModbusDeviceIdentification()
@@ -446,6 +555,9 @@ class ModbusServer:
                 self.slave_id,
             )
             _LOGGER.debug("Modbus server running status: %s", self.running)
+
+            # Verify server is running
+            await self._verify_server()
         except Exception as e:
             _LOGGER.error(
                 "Failed to start Modbus server: %s",
@@ -454,16 +566,52 @@ class ModbusServer:
             )
             raise
 
+    async def _verify_server(self) -> bool:
+        """Verify the server is running and accessible."""
+        try:
+            import socket
+
+            _LOGGER.debug("Verifying server on %s:%s", self.host, self.port)
+
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.settimeout(1)
+                result = s.connect_ex((self.host, self.port))
+
+                if result == 0:
+                    _LOGGER.debug("Server verification successful")
+                    return True
+                else:
+                    _LOGGER.error(
+                        "Server not listening on %s:%s (error: %s)",
+                        self.host, self.port, result
+                    )
+                    return False
+
+        except Exception as e:
+            _LOGGER.error("Server verification failed: %s", e)
+            return False
+
     async def _run_modbus_server(self, server_context, identity):
         """Run the Modbus server in the background."""
         try:
+            _LOGGER.info("Starting Modbus server on %s:%s", self.host, self.port)
+
+            # Add a small delay to ensure everything is initialized
+            await asyncio.sleep(0.1)
+
             self.server = await StartAsyncTcpServer(
                 context=server_context,
                 identity=identity,
                 address=(self.host, self.port),
             )
+
+            _LOGGER.info("Modbus server running successfully")
+
+        except asyncio.CancelledError:
+            _LOGGER.info("Modbus server task cancelled")
+            raise
         except Exception as e:
-            _LOGGER.error("Error in Modbus server: %s", e, exc_info=True)
+            _LOGGER.error("Modbus server error: %s", e, exc_info=True)
             raise
 
     async def stop(self) -> None:
@@ -476,6 +624,7 @@ class ModbusServer:
             self.server_task.cancel()
             try:
                 await self.server_task
+                _LOGGER.debug("Server task completed")
             except asyncio.CancelledError:
                 _LOGGER.debug("Server task cancelled")
             except Exception as e:
@@ -488,6 +637,8 @@ class ModbusServer:
                 _LOGGER.info("Growatt Modbus server stopped")
             except Exception as e:
                 _LOGGER.error("Error stopping Modbus server: %s", e)
+        else:
+            _LOGGER.debug("No server instance to stop")
 
     async def update_register(self, address: int, value: int) -> bool:
         """Update a register value directly (for backward compatibility)."""
