@@ -113,45 +113,93 @@ class OnDemandModbusContext(ModbusSimulatorContext):
             # For frequency (fixed value)
             if mapping.get("sensor") is None:
                 if "default" in mapping:
-                    return int(mapping["default"] * mapping["scale"])
+                    value = int(mapping["default"] * mapping["scale"])
+                    _LOGGER.debug("Static value: raw=%s, scaled=%s",
+                                  mapping["default"], value)
+                    return value
+                _LOGGER.debug("Static value defaulting to 0")
                 return 0
 
             # For sensor-based values
             entity_id = mapping["sensor"]
+            _LOGGER.debug("Fetching sensor value for %s", entity_id)
+
             if not entity_id:
+                _LOGGER.warning("No sensor configured for mapping")
                 raise ValueError("No sensor configured")
 
             state = self.hass.states.get(entity_id)
             if not state:
+                _LOGGER.warning("Sensor %s not found", entity_id)
                 raise ValueError(f"Sensor {entity_id} not found")
 
             if state.state in (STATE_UNAVAILABLE, STATE_UNKNOWN):
+                _LOGGER.warning("Sensor %s is %s", entity_id, state.state)
                 raise ValueError(f"Sensor {entity_id} is {state.state}")
 
             try:
                 value = float(state.state)
-            except ValueError:
-                raise ValueError(f"Invalid value for {entity_id}: {state.state}")
+                _LOGGER.debug("Sensor %s raw value: %s", entity_id, state.state)
+            except ValueError as e:
+                _LOGGER.warning(
+                    "Invalid sensor value for %s: %s",
+                    entity_id,
+                    state.state
+                )
+                raise ValueError(f"Invalid value for {entity_id}: {state.state}") from e
 
-            register_value = int(value * mapping["scale"])
+            register_value = int((value * mapping["scale"]) + mapping.get("offset", 0))
+            _LOGGER.debug(
+                "Sensor %s: raw=%s, scaled=%s, register=%s",
+                entity_id, state.state, value, register_value
+            )
 
             # Apply bounds checking
             if mapping.get("signed", False):
                 if register_value < -32768:
                     register_value = -32768
+                    _LOGGER.debug("Clamping to signed min: %s", register_value)
                 elif register_value > 32767:
                     register_value = 32767
+                    _LOGGER.debug("Clamping to signed max: %s", register_value)
             else:
                 if register_value < 0:
                     register_value = 0
+                    _LOGGER.debug("Clamping to unsigned min: %s", register_value)
                 elif register_value > 65535:
                     register_value = 65535
+                    _LOGGER.debug("Clamping to unsigned max: %s", register_value)
 
             return register_value
 
         except Exception as e:
             _LOGGER.warning("Error getting sensor value: %s", e)
             raise ModbusException(f"Sensor value error: {str(e)}")
+
+    async def async_getValues(
+        self,
+        device_id: int,
+        func_code: int,
+        address: int,
+        count: int = 1
+    ) -> list[int] | list[bool] | ExcCodes:
+        """Get values from registers asynchronously - required by pymodbus 3.13.1.
+
+        This is the main async interface method that pymodbus calls.
+        """
+        _LOGGER.debug(
+            "async_getValues called: device_id=%s, func_code=%s, address=%s, count=%s",
+            device_id, func_code, address, count
+        )
+
+        try:
+            # Delegate to our existing implementation
+            result = await self.async_OLD_getValues(func_code, address, count)
+            _LOGGER.debug("async_getValues returning: %s", result)
+            return result
+        except Exception as e:
+            _LOGGER.error("Error in async_getValues: %s", e, exc_info=True)
+            return ExcCodes.SERVER_DEVICE_FAILURE
 
     async def async_OLD_getValues(
         self,
@@ -163,9 +211,14 @@ class OnDemandModbusContext(ModbusSimulatorContext):
 
         Fetches sensor values on-demand.
         """
+        _LOGGER.debug(
+            "async_OLD_getValues called: func_code=%s, address=%s, count=%s",
+            func_code, address, count
+        )
         try:
             # Only support holding registers (function code 3)
             if func_code != 3:
+                _LOGGER.warning("Unsupported function code: %s", func_code)
                 return ExcCodes.ILLEGAL_FUNCTION
 
             # Convert internal address to external address (40001-40004)
@@ -173,6 +226,7 @@ class OnDemandModbusContext(ModbusSimulatorContext):
 
             # Validate address range
             if external_address < 40001 or external_address > 40004:
+                _LOGGER.warning("Invalid register address: %s", external_address)
                 return ExcCodes.ILLEGAL_ADDRESS
 
             # Fetch all 4 registers on-demand (to ensure consistency)
@@ -184,6 +238,10 @@ class OnDemandModbusContext(ModbusSimulatorContext):
                         mapping = self.register_map[current_external_address]
                         value = self._get_sensor_value(mapping)
                         values.append(value)
+                        _LOGGER.debug(
+                            "Register %s value: %s",
+                            current_external_address, value
+                        )
                     except Exception as e:
                         _LOGGER.error(
                             "Failed to get value for register %d: %s",
@@ -197,12 +255,16 @@ class OnDemandModbusContext(ModbusSimulatorContext):
             # Return only the requested registers
             start_index = address
             end_index = start_index + count
-            return values[start_index:end_index]
+            result = values[start_index:end_index]
+
+            _LOGGER.debug("async_OLD_getValues returning: %s", result)
+            return result
 
         except ModbusException:
+            _LOGGER.error("ModbusException in async_OLD_getValues")
             return ExcCodes.SERVER_DEVICE_FAILURE
         except Exception as e:
-            _LOGGER.error("Error in async_OLD_getValues: %s", e)
+            _LOGGER.error("Error in async_OLD_getValues: %s", e, exc_info=True)
             return ExcCodes.SERVER_DEVICE_FAILURE
 
     async def async_OLD_setValues(
@@ -341,10 +403,14 @@ class ModbusServer:
         _LOGGER.debug("Registers setup complete")
 
         # Create on-demand Modbus context
+        _LOGGER.debug("Creating OnDemandModbusContext")
         self.context = OnDemandModbusContext(self.hass, self.config_entry)
+        _LOGGER.debug("OnDemandModbusContext created: %s", type(self.context))
 
         # Create server context with version-agnostic API
+        _LOGGER.debug("Creating ModbusServerContext with slave_id: %s", self.slave_id)
         server_context = create_modbus_server_context(self.slave_id, self.context)
+        _LOGGER.debug("ModbusServerContext created: %s", type(server_context))
 
         # Setup device identification
         identity = ModbusDeviceIdentification()
