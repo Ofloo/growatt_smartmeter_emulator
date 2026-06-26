@@ -5,6 +5,7 @@ Designed for compatibility with multiple pymodbus versions.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 from dataclasses import dataclass
 
@@ -423,18 +424,28 @@ class ModbusServer:
 
         _LOGGER.debug("Starting Modbus server on %s:%d", self.host, self.port)
         try:
-            self.server = await StartAsyncTcpServer(
-                context=server_context,
-                identity=identity,
-                address=(self.host, self.port),
+            _LOGGER.debug(
+                "Attempting to start Modbus server with context type: %s",
+                type(server_context)
             )
+
+            # Start the server in the background so it doesn't block setup
+            import asyncio
+            self.server_task = asyncio.create_task(
+                self._run_modbus_server(server_context, identity)
+            )
+
+            # Give the server a moment to start
+            await asyncio.sleep(0.1)
+
+            self.running = True
             _LOGGER.info(
                 "Growatt Modbus server started on %s:%d (slave ID: %d)",
                 self.host,
                 self.port,
                 self.slave_id,
             )
-            self.running = True
+            _LOGGER.debug("Modbus server running status: %s", self.running)
         except Exception as e:
             _LOGGER.error(
                 "Failed to start Modbus server: %s",
@@ -443,14 +454,40 @@ class ModbusServer:
             )
             raise
 
+    async def _run_modbus_server(self, server_context, identity):
+        """Run the Modbus server in the background."""
+        try:
+            self.server = await StartAsyncTcpServer(
+                context=server_context,
+                identity=identity,
+                address=(self.host, self.port),
+            )
+        except Exception as e:
+            _LOGGER.error("Error in Modbus server: %s", e, exc_info=True)
+            raise
+
     async def stop(self) -> None:
         """Stop the Modbus server asynchronously."""
         _LOGGER.debug("Stopping Modbus server")
         self.running = False
+
+        if hasattr(self, 'server_task') and self.server_task:
+            _LOGGER.debug("Cancelling server task")
+            self.server_task.cancel()
+            try:
+                await self.server_task
+            except asyncio.CancelledError:
+                _LOGGER.debug("Server task cancelled")
+            except Exception as e:
+                _LOGGER.error("Error stopping server task: %s", e)
+
         if self.server:
-            # Use stop() instead of kill() for compatibility with tests
-            await self.server.stop()
-            _LOGGER.info("Growatt Modbus server stopped")
+            try:
+                # Use stop() instead of kill() for compatibility with tests
+                await self.server.stop()
+                _LOGGER.info("Growatt Modbus server stopped")
+            except Exception as e:
+                _LOGGER.error("Error stopping Modbus server: %s", e)
 
     async def update_register(self, address: int, value: int) -> bool:
         """Update a register value directly (for backward compatibility)."""

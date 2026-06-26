@@ -34,7 +34,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await coordinator.async_setup_listeners()
 
     entry.async_on_unload(entry.add_update_listener(async_update_entry))
-    entry.async_on_unload(lambda: hass.async_create_task(modbus_server.stop()))
+    entry.async_on_unload(
+        hass.async_create_task(modbus_server.stop(), "Stop Modbus server")
+    )
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
@@ -48,8 +50,11 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     modbus_server = hass.data[DOMAIN].get("modbus_server")
     if modbus_server:
         _LOGGER.debug("Stopping Modbus server")
-        await modbus_server.stop()
-        _LOGGER.debug("Modbus server stopped")
+        try:
+            await modbus_server.stop()
+            _LOGGER.debug("Modbus server stopped")
+        except Exception as e:
+            _LOGGER.error("Error stopping Modbus server: %s", e)
     else:
         _LOGGER.warning("Modbus server not found in hass.data[DOMAIN]")
 
