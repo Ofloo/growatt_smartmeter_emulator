@@ -183,179 +183,101 @@ class OnDemandModbusContext(ModbusSimulatorContext):
         func_code: int,
         address: int,
         count: int = 1
-    ) -> list[int] | list[bool] | ExcCodes:
-        """Get values from registers asynchronously - required by pymodbus 3.13.1.
+    ) -> list[int] | ExcCodes:
+        """Get values from registers asynchronously with proper address handling.
 
-        This is the main async interface method that pymodbus calls.
+        This method handles both 0-based (common in Modbus) and 40001-based addressing.
         """
         _LOGGER.debug(
-            "MODBUS REQUEST START: device_id=%s, func_code=%s, address=%s, count=%s",
+            "MODBUS REQUEST: device_id=%s, func_code=%s, address=%s, count=%s",
             device_id, func_code, address, count
         )
 
-        try:
-            # Function code validation
-            _LOGGER.debug("Validating function code: %s", func_code)
-            if func_code != 3:
-                _LOGGER.warning("MODBUS ERROR: Unsupported function code %s", func_code)
-                return ExcCodes.ILLEGAL_FUNCTION
+        # 1. Validate function code (only support holding registers)
+        if func_code != 3:
+            _LOGGER.warning("Unsupported function code: %s", func_code)
+            return ExcCodes.ILLEGAL_FUNCTION
 
-            # Address validation
-            _LOGGER.debug("Validating address: %s", address)
-            # Convert internal address to external address (40001-40004)
-            external_address = address + 40001
-            if external_address < 40001 or external_address > 40004:
+        # 2. Normalize the start address
+        # Some clients send 0 for register 40001, others send 40001 directly
+        start_address = address
+        if start_address < 40001:
+            # Client is using 0-based addressing (common in Modbus)
+            start_address += 40001
+
+        _LOGGER.debug("Normalized start address: %s", start_address)
+
+        # 3. Validate address range
+        if start_address < 40001 or start_address > 40004:
+            _LOGGER.warning("Invalid register address: %s", start_address)
+            return ExcCodes.ILLEGAL_ADDRESS
+
+        # 4. Check if the requested range is valid
+        end_address = start_address + count - 1
+        if end_address > 40004:
+            _LOGGER.warning(
+                "Invalid register range: %s-%s (exceeds 40004)",
+                start_address,
+                end_address
+            )
+            return ExcCodes.ILLEGAL_ADDRESS
+
+        # 5. Collect values for the requested range
+        values = []
+        for i in range(count):
+            current_address = start_address + i
+
+            # Check if register exists
+            if current_address not in self.register_map:
                 _LOGGER.warning(
-                    "MODBUS ERROR: Invalid register address: %s",
-                    external_address
+                    "Register %s not found in register map",
+                    current_address
                 )
                 return ExcCodes.ILLEGAL_ADDRESS
 
-            # Count validation
-            _LOGGER.debug("Validating count: %s", count)
-            if count < 1 or count > 4:
-                _LOGGER.warning("MODBUS ERROR: Invalid count %s", count)
-                return ExcCodes.ILLEGAL_VALUE
+            try:
+                # Get the register value
+                mapping = self.register_map[current_address]
+                reg_value = self._get_sensor_value(mapping)
 
-            # Process request
-            _LOGGER.debug("Processing request...")
-            result = await self._process_request_with_logging(func_code, address, count)
+                # Modbus registers are 16-bit unsigned, convert negative values
+                if reg_value < 0:
+                    reg_value = (1 << 16) + reg_value  # 2's complement
+                    _LOGGER.debug(
+                        "Converted negative value to unsigned: %s",
+                        reg_value
+                    )
 
-            _LOGGER.debug("MODBUS REQUEST COMPLETE: %s", result)
-            return result
+                values.append(reg_value)
+                _LOGGER.debug("Register %s value: %s", current_address, reg_value)
 
-        except Exception as e:
-            _LOGGER.error(
-                "MODBUS REQUEST ERROR: %s", e, exc_info=True
-            )
-            return ExcCodes.SERVER_DEVICE_FAILURE
+            except Exception as e:
+                _LOGGER.error(
+                    "Error reading register %s: %s",
+                    current_address,
+                    e
+                )
+                return ExcCodes.SERVER_DEVICE_FAILURE
 
-    async def _process_request_with_logging(
-        self,
-        func_code: int,
-        address: int,
-        count: int
-    ):
-        """Process a Modbus request with detailed logging."""
-        _LOGGER.debug("Starting request processing...")
-
-        try:
-            # Convert address
-            external_address = address + 40001
-            _LOGGER.debug(
-                "Converted address: internal=%s -> external=%s",
-                address,
-                external_address
-            )
-
-            # Check register map
-            _LOGGER.debug("Register map contents: %s", list(self.register_map.keys()))
-            _LOGGER.debug("Register map size: %s", len(self.register_map))
-
-            # Fetch values
-            values = []
-            for i in range(4):
-                current_external = 40001 + i
-                _LOGGER.debug("Processing register: %s", current_external)
-
-                if current_external in self.register_map:
-                    try:
-                        mapping = self.register_map[current_external]
-                        _LOGGER.debug(
-                            "Found mapping for %s: %s",
-                            current_external,
-                            mapping
-                        )
-                        value = self._get_sensor_value(mapping)
-                        _LOGGER.debug("Register %s value: %s", current_external, value)
-                        values.append(value)
-                    except Exception as e:
-                        _LOGGER.error(
-                            "Error getting value for %s: %s",
-                            current_external,
-                            e
-                        )
-                        raise
-                else:
-                    _LOGGER.debug("Register %s not found in map", current_external)
-                    values.append(0)
-
-            # Return requested values
-            start = address
-            end = start + count
-            result = values[start:end]
-            _LOGGER.debug("Returning values from %s:%s: %s", start, end, result)
-            return result
-
-        except Exception as e:
-            _LOGGER.error("Error processing request: %s", e)
-            raise
+        _LOGGER.debug("Returning values: %s", values)
+        return values
 
     async def async_OLD_getValues(
         self,
         func_code: int,
         address: int,
         count: int = 1
-    ) -> list[int] | list[bool] | ExcCodes:
-        """Get values from registers asynchronously.
+    ) -> list[int] | ExcCodes:
+        """Get values from registers asynchronously (legacy method).
 
-        Fetches sensor values on-demand.
+        Wrapper for async_getValues with simplified interface.
         """
         _LOGGER.debug(
             "async_OLD_getValues called: func_code=%s, address=%s, count=%s",
             func_code, address, count
         )
-        try:
-            # Only support holding registers (function code 3)
-            if func_code != 3:
-                _LOGGER.warning("Unsupported function code: %s", func_code)
-                return ExcCodes.ILLEGAL_FUNCTION
-
-            # Convert internal address to external address (40001-40004)
-            external_address = address + 40001
-
-            # Validate address range
-            if external_address < 40001 or external_address > 40004:
-                _LOGGER.warning("Invalid register address: %s", external_address)
-                return ExcCodes.ILLEGAL_ADDRESS
-
-            # Fetch all 4 registers on-demand (to ensure consistency)
-            values = []
-            for i in range(4):  # Always fetch all 4 registers
-                current_external_address = 40001 + i
-                if current_external_address in self.register_map:
-                    try:
-                        mapping = self.register_map[current_external_address]
-                        value = self._get_sensor_value(mapping)
-                        values.append(value)
-                        _LOGGER.debug(
-                            "Register %s value: %s",
-                            current_external_address, value
-                        )
-                    except Exception as e:
-                        _LOGGER.error(
-                            "Failed to get value for register %d: %s",
-                            current_external_address,
-                            e
-                        )
-                        return ExcCodes.SERVER_DEVICE_FAILURE
-                else:
-                    values.append(0)
-
-            # Return only the requested registers
-            start_index = address
-            end_index = start_index + count
-            result = values[start_index:end_index]
-
-            _LOGGER.debug("async_OLD_getValues returning: %s", result)
-            return result
-
-        except ModbusException:
-            _LOGGER.error("ModbusException in async_OLD_getValues")
-            return ExcCodes.SERVER_DEVICE_FAILURE
-        except Exception as e:
-            _LOGGER.error("Error in async_OLD_getValues: %s", e, exc_info=True)
-            return ExcCodes.SERVER_DEVICE_FAILURE
+        # Delegate to async_getValues (which handles address normalization)
+        return await self.async_getValues(0, func_code, address, count)
 
     async def async_OLD_setValues(
         self,
