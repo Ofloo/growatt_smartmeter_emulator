@@ -468,7 +468,7 @@ class ModbusServer:
             )
 
             # Give the server a moment to start
-            await asyncio.sleep(0.1)
+            await asyncio.sleep(0.5)
 
             self.running = True
             _LOGGER.info(
@@ -479,8 +479,12 @@ class ModbusServer:
             )
             _LOGGER.debug("Modbus server running status: %s", self.running)
 
-            # Verify server is running
-            await self._verify_server()
+            # Verify server is running (don't fail if verification fails)
+            verification_result = await self._verify_server()
+            if not verification_result:
+                _LOGGER.warning(
+                    "Server verification failed, but server may still be running"
+                )
         except Exception as e:
             _LOGGER.error(
                 "Failed to start Modbus server: %s",
